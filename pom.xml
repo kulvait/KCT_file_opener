@@ -1,0 +1,203 @@
+<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0          http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.scijava</groupId>
+    <artifactId>pom-scijava</artifactId>
+    <version>43.0.0</version>
+    <relativePath/>
+  </parent>
+  <groupId>com.kulvait.kct</groupId>
+  <artifactId>KCT_file_opener</artifactId>
+  <version>1.0.0</version>
+  <name>Zarr File Opener</name>
+  <description>ImageJ plugin to open files used within KCT project</description>
+  <url>https://github.com/kulvait/KCT_file_opener</url>
+  <inceptionYear>2026</inceptionYear>
+  <organization>
+    <name>Vojtech Kulvait</name>
+    <url>kulvait.com</url>
+  </organization>
+  <licenses>
+    <license>
+      <name>GNU GENERAL PUBLIC LICENSE V3</name>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>kulvait</id>
+      <name>Vojt&#x11B;ch Kulvait</name>
+      <url>https://scholar.google.cz/citations?user=rsOToBIAAAAJ</url>
+      <roles>
+        <role>lead</role>
+        <role>developer</role>
+        <role>debugger</role>
+        <role>reviewer</role>
+        <role>support</role>
+        <role>maintainer</role>
+      </roles>
+    </developer>
+  </developers>
+  <contributors>
+    <contributor>
+      <name>Vojt&#x11B;ch Kulvait</name>
+      <url>https://scholar.google.cz/citations?user=rsOToBIAAAAJ</url>
+    </contributor>
+  </contributors>
+  <scm>
+    <connection>scm:git:https://github.com/kulvait/KCT_file_opener.git</connection>
+    <developerConnection>scm:git:git@github.com:kulvait/KCT_file_opener.git</developerConnection>
+    <tag>HEAD</tag>
+    <url>https://github.com/kulvait/KCT_file_opener</url>
+  </scm>
+  <mailingLists>
+    <mailingList>
+      <name>Dev null</name>
+      <archive>/dev/null</archive>
+    </mailingList>
+  </mailingLists>
+  <issueManagement>
+    <system>GitLab Issues</system>
+    <url>https://github.com/kulvait/KCT_file_opener/issues</url>
+  </issueManagement>
+  <ciManagement>
+    <system>None</system>
+  </ciManagement>
+  <properties>
+    <package-name>com.kulvait.kct.imagej.zarfileopener</package-name>
+    <main-class>com.kulvait.kct.imagej.zarfileopener.ZarFileOpener</main-class>
+    <license.licenseName>gpl_3</license.licenseName>
+    <license.copyrightOwners>Vojt&#x11B;ch Kulvait</license.copyrightOwners>
+    <maven.compiler.release>17</maven.compiler.release>
+  </properties>
+  <dependencies>
+    <!-- ImageJ -->
+    <dependency>
+      <groupId>net.imagej</groupId>
+      <artifactId>ij</artifactId>
+    </dependency>
+    <!-- zarr-java -->
+<!--
+    <dependency>
+      <groupId>dev.zarr</groupId>
+      <artifactId>zarr-java</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+-->
+    <dependency>
+        <groupId>com.github.kulvait</groupId>
+        <artifactId>zarr-java</artifactId>
+        <version>zip-SNAPSHOT</version> <!-- branch name -->
+    </dependency>
+  </dependencies>
+  <repositories>
+    <repository>
+      <id>unidata-all</id>
+      <name>Unidata All</name>
+      <url>https://artifacts.unidata.ucar.edu/repository/unidata-all/</url>
+    </repository>
+    <repository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </repository>
+  </repositories>
+  <build>
+    <plugins>
+      <!-- Compiler -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>${maven.compiler.release}</release>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>enforce</id>
+            <configuration>
+              <rules>
+                <bannedDependencies>
+                  <excludes>
+                    <!-- disable banning -->
+                  </excludes>
+                </bannedDependencies>
+              </rules>
+              <fail>false</fail>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+<!-- Spotless plugin for code formatting, run using mvn spotless:apply -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>2.40.0</version> <!-- use latest stable -->
+                <configuration>
+                    <java>
+                        <!-- Path to your Eclipse formatter XML -->
+                        <eclipse>
+                            <file>${project.basedir}/styles/eclipseStyle.xml</file>
+                        </eclipse>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>apply</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+    </plugins>
+  </build>
+  <profiles>
+    <!-- Shade plugin, run using mvn clean package -P fat-jar -->
+    <profile>
+      <id>fat-jar</id>
+      <build>
+        <finalName>KCT_file_opener-fat</finalName>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-shade-plugin</artifactId>
+            <version>3.5.0</version>
+            <executions>
+              <execution>
+                <phase>package</phase>
+                <goals>
+                  <goal>shade</goal>
+                </goals>
+                <configuration>
+                  <relocations>
+                    <relocation>
+                      <pattern>dev.zarr</pattern>
+                      <shadedPattern>com.kulvait.shaded.zarr</shadedPattern>
+                    </relocation>
+                    <relocation>
+                      <pattern>com.fasterxml.jackson</pattern>
+                      <shadedPattern>com.kulvait.shaded.jackson</shadedPattern>
+                    </relocation>
+                  </relocations>
+                  <filters>
+                    <filter>
+                      <artifact>*:*</artifact>
+                      <excludes>
+                        <exclude>META-INF/*.SF</exclude>
+                        <exclude>META-INF/*.DSA</exclude>
+                        <exclude>META-INF/*.RSA</exclude>
+                      </excludes>
+                    </filter>
+                  </filters>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>
