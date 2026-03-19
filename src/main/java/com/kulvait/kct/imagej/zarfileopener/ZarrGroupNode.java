@@ -13,17 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ZarrGroupNode extends ZarrNode {
-    private List<ZarrNode> children = new ArrayList<>();
-
     public ZarrGroupNode(String[] zarrPath, ZarrNode parent, ZarrRootNode root) {
         super(zarrPath, parent, root, ZarrNodeType.GROUP);
-    }
-
-    public void addChild(ZarrNode child) {
-        children.add(child);
-    }
-
-    public List<ZarrNode> getChildren() {
-        return children;
     }
 }

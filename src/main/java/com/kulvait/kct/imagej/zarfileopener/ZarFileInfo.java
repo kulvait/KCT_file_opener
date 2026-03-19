@@ -8,6 +8,7 @@
 
 package com.kulvait.kct.imagej.zarfileopener;
 
+// Java imports
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -16,9 +17,15 @@ import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Arrays;
+import java.util.List;
+// Logging imports
+import java.util.logging.Level;
+import java.util.logging.Logger;
 // Java NIO imports for file handling
 import java.nio.file.Path;
 import java.nio.file.Files;
+// Javax imports
+import javax.swing.tree.DefaultMutableTreeNode;
 // Zarr Java library imports
 import dev.zarr.zarrjava.core.Array;
 import dev.zarr.zarrjava.core.ArrayMetadata;
@@ -27,8 +34,8 @@ import dev.zarr.zarrjava.store.FilesystemStore;
 import dev.zarr.zarrjava.store.StoreHandle;
 import dev.zarr.zarrjava.ZarrException;
 
-
 public class ZarFileInfo {
+    private static final Logger logger = Logger.getLogger(ZarFileInfo.class.getName());
     private File f;
     private boolean validZarr = true;
     private ZarrRootNode rootNode = null;
@@ -59,24 +66,82 @@ public class ZarFileInfo {
         if (isFile) {
             isZip = checkIfZip(path);
         }
-        StoreHandle store;
-        if (isZip) {
-            System.out.println("Opening ZIP store: " + path);
-            store = new ReadOnlyZipStore(path).resolve(); // root handle
-        } else if (isDirectory) {
-            System.out.println("Opening folder store: " + path);
-            store = new StoreHandle(new FilesystemStore(path));
-        } else if (isFile) {
-            System.out.println(
-                    "File %s is not a ZIP file nor directory, not a Zarr container%n");
+        StoreHandle store = null;
+        try {
+            if (isZip) {
+                System.out.println("Opening ZIP store: " + path);
+                store = new ReadOnlyZipStore(path).resolve(); // root handle
+            } else if (isDirectory) {
+                System.out.println("Opening folder store: " + path);
+                store = new StoreHandle(new FilesystemStore(path));
+            } else if (isFile) {
+                String msg = String.format(
+                        "File %s is not a ZIP file nor directory, not a Zarr container%n", path);
+                logger.log(Level.INFO, msg);
+                validZarr = false;
+            }
+        } catch (Exception e) {
+            logger.log(Level.INFO, "Error opening store: " + e.getMessage(), e);
             validZarr = false;
             return;
         }
 
+        if (validZarr) {
+            try {
+                rootNode = new ZarrRootNode(store);
+            } catch (Exception e) {
+                logger.log(Level.WARNING, "Error reading Zarr metadata: " + e.getMessage(), e);
+                validZarr = false;
+            }
+        }
     }
 
     public boolean isValidZarr() {
         return validZarr;
+    }
+
+    public ZarrRootNode getRootNode() {
+        return rootNode;
+    }
+
+    public boolean isZipZarr() {
+        if (rootNode == null) {
+            return false;
+        }
+        return rootNode.isZip();
+    }
+
+    public boolean isTopLevelArray() {
+        if (rootNode == null) {
+            return false;
+        }
+        return rootNode.isArray();
+
+    }
+
+    private void populateGroupContent(ZarrNode node, DefaultMutableTreeNode groupNode) {
+        if (node != null) {
+            List<ZarrNode> children = node.getChildren();
+            for (ZarrNode child : children) {
+                DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child.getName());
+                groupNode.add(childNode);
+                populateGroupContent(child, childNode);
+            }
+        }
+    }
+
+    public void getGroupContent(DefaultMutableTreeNode groupNode) {
+        if (rootNode != null) {
+            List<ZarrNode> rootChildren = rootNode.getChildren();
+            for (ZarrNode child : rootChildren) {
+                DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child.getName());
+                groupNode.add(childNode);
+                ZarrNodeType type = child.getType();
+                if (type == ZarrNodeType.GROUP) {
+                    populateGroupContent(child, childNode);
+                }
+            }
+        }
     }
 
 }

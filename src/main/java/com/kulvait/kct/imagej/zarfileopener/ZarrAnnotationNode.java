@@ -11,14 +11,8 @@ package com.kulvait.kct.imagej.zarfileopener;
 
 public class ZarrAnnotationNode extends ZarrNode {
 
-    private String annotationType;
-
-    public ZarrAnnotationNode(String[] zarrPath, ZarrNode parent, ZarrRootNode root, String type) {
+    public ZarrAnnotationNode(String[] zarrPath, ZarrNode parent, ZarrRootNode root) {
         super(zarrPath, parent, root, ZarrNodeType.ANNOTATION);
-        this.annotationType = type;
     }
 
-    public String getAnnotationType() {
-        return annotationType;
-    }
 }

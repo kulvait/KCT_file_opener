@@ -234,6 +234,7 @@
         </goals>
         <configuration>
          <outputDirectory>${deploy.dir}</outputDirectory>
+         <overwrite>true</overwrite>
          <resources>
           <resource>
            <directory>${project.build.directory}</directory>

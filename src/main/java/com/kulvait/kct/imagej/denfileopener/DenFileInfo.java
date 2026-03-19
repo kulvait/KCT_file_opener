@@ -50,7 +50,7 @@ public class DenFileInfo {
     long dimx, dimy, dimz;
     boolean xmajor;
 
-    DenFileInfo(File f) {
+    public DenFileInfo(File f) {
         byteSize = f.length();
         dim = new long[16];
         Arrays.fill(dim, 1);

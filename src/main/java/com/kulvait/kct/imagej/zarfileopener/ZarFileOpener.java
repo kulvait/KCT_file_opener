@@ -21,7 +21,6 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import javax.swing.JFileChooser;
-import com.kulvait.kct.imagej.denfileopener.CheckBoxAccessory;
 // Java NIO imports for file handling
 import java.nio.file.Path;
 import java.nio.file.Files;
@@ -29,6 +28,12 @@ import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
 import java.util.ArrayList;
+// Java logging imports
+import com.kulvait.logging.LineNumberFormatter;
+import java.util.logging.Logger;
+import java.util.logging.Level;
+import java.util.logging.Handler;
+import java.util.logging.ConsoleHandler;
 // Zarr Java library imports
 import dev.zarr.zarrjava.core.Array;
 import dev.zarr.zarrjava.core.ArrayMetadata;
@@ -37,24 +42,44 @@ import dev.zarr.zarrjava.store.FilesystemStore;
 import dev.zarr.zarrjava.store.StoreHandle;
 import dev.zarr.zarrjava.ZarrException;
 
+
 /**
  * Uses the JFileChooser from Swing to open one or more raw images. The "Open
  * All Files in Folder" check box in the dialog is ignored.
  */
 public class ZarFileOpener implements PlugIn {
+    private static final Logger logger = Logger.getLogger(ZarFileOpener.class.getName());
 
     static private String directory;
     private File file;
-    private CheckBoxAccessory cba;
+    private ZarOpenerAccessory zarAccessory;
 
     public void run(String arg) {
+
+        Logger rootLogger = Logger.getLogger("com.kulvait.kct.imagej.zarfileopener");
+        rootLogger.setLevel(Level.ALL);
+        rootLogger.setUseParentHandlers(false);
+        // Remove default handlers if needed
+        Handler[] handlers = rootLogger.getHandlers();
+        for (Handler h : handlers) {
+            rootLogger.removeHandler(h);
+        }
+
+        // Add console handler that prints all levels
+        ConsoleHandler consoleHandler = new ConsoleHandler();
+        consoleHandler.setLevel(Level.FINE); // allow debug messages
+        LineNumberFormatter formatter = new LineNumberFormatter();
+        consoleHandler.setFormatter(formatter);
+        rootLogger.addHandler(consoleHandler);
+
+        logger.info("Logger initialized at FINE level");
         try {
             boolean useVirtualStack;
             if (arg.equals("")) {
                 if (openFilesDialog() == false) {
                     return;
                 }
-                useVirtualStack = cba.isBoxSelected();
+                useVirtualStack = zarAccessory.isBoxSelected();
             } else {
                 file = new File(arg);
                 useVirtualStack = true;
@@ -72,7 +97,8 @@ public class ZarFileOpener implements PlugIn {
                 public void run() {
                     JFileChooser fc = new JFileChooser();
                     fc.setDialogTitle("Open Zarr file...");
-                    fc.setAccessory(new CheckBoxAccessory(fc));
+                    zarAccessory = new ZarOpenerAccessory(fc);
+                    fc.setAccessory(zarAccessory);
                     fc.setMultiSelectionEnabled(false);
                     if (directory == null) {
                         directory = Prefs.getString(".options.denlastdir");
@@ -94,7 +120,7 @@ public class ZarFileOpener implements PlugIn {
                         return;
                     }
                     file = fc.getSelectedFile();
-                    cba = (CheckBoxAccessory) fc.getAccessory();
+                    //zarAccessory = (CheckBoxAccessory) fc.getAccessory();
                     directory = fc.getCurrentDirectory().getPath() + File.separator;
                 }
             });
@@ -103,7 +129,7 @@ public class ZarFileOpener implements PlugIn {
         } catch (InvocationTargetException e) {
             System.out.printf("%s ERROR", e.toString());
         }
-        if (cba == null || file == null) {
+        if (zarAccessory == null || file == null) {
             file = null;
             return false;
         }

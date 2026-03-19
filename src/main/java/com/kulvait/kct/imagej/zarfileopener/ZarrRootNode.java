@@ -32,7 +32,7 @@ public class ZarrRootNode extends ZarrNode {
     private String storePath; // folder, zip, or URI
     private String storeURI; // optional, for remote
     private boolean isZip;
-    private boolean isArray; // true if root is single array
+    private boolean isTopLevelArray;
 
     public ZarrRootNode(StoreHandle handle) {
         super(new String[0], null, null, ZarrNodeType.ROOT);
@@ -55,7 +55,7 @@ public class ZarrRootNode extends ZarrNode {
         } else {
             this.isZip = false;
         }
-        this.isArray = this.isArray("/"); // check if root is single array
+        this.isTopLevelArray = this.isArray(new String[0]);// Check if the root itself is an array
         this.root = this; // root points to itself
     }
 
@@ -76,11 +76,11 @@ public class ZarrRootNode extends ZarrNode {
     }
 
     public boolean isArray() {
-        return isArray;
+        return isTopLevelArray;
     }
 
     /** Check if a path inside this handle is a Zarr array */
-    public boolean isArray(String path) {
+    public boolean isArray(String[] path) {
         try {
             Array.open(handle.resolve(path));
             return true;
@@ -90,7 +90,7 @@ public class ZarrRootNode extends ZarrNode {
     }
 
     /** Check if a path inside this handle is a Zarr group */
-    public boolean isGroup(String path) {
+    public boolean isGroup(String[] path) {
         try {
             Group.open(handle.resolve(path));
             return true;
