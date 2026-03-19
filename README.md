@@ -1,27 +1,16 @@
-# KCT Zarr File Opener
+# KCT File Opener
 
-Motivation
-----------
+## Motivation
 
-This plugin provides a simple **Zarr file opener** for ImageJ.  
-I did not find any existing plugin functional enough to open Zarr files on disk, so I created this one.
+Due to the need for **compressed multidimensional formats** in the KCT project, the existing DEN format will gradually be supplemented by **Zarr**.
 
-It is an **ImageJ plugin** to open [DEN files](https://kulvait.github.io/KCT_doc/den-format.html) and Zarr files.
+We needed a **reliable plugin** to quickly visualize these files without being burdened by unnecessary features.
 
+This plugin is similar to [KCT DEN File Opener](https://github.com/kulvait/KCT_den_file_opener) but relies on the **heavy `java-zarr` library**, so it was developed independently to handle Zarr files effectively.
 
-Java Runtime
-------------
+The architecture mirrors the original DEN file opener: it leverages [ImageJ’s Raw File Opener](https://imagej.nih.gov/ij/plugins/raw-file-opener.html) logic, using a pluggable backend for reading data.
 
-Some clusters might not have a Java runtime installed.  
-This project was **built and tested with Java 17 (Temurin)**:
-
-Download via [Adoptium](https://adoptium.net/temurin/releases/?version=17) or via package manager:
-
-```bash
-apt-get install temurin-17-jre
-```
-
-Tested with [Java 17 temurin](https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.9%2B9/OpenJDK17U-debugimage_x64_linux_hotspot_17.0.9_9.tar.gz).
+Its primary goal is to open **on-disk Zarr files** and [DEN files](https://kulvait.github.io/KCT_doc/den-format.html) used in the KCT project. While it may not implement the full Zarr specification, it provides a practical solution that works better for most use cases than other existing approaches. It is not necessary to install DEN file opener to open DEN files, as this plugin can handle both formats. When you do not need Zarr support, you can use the DEN file opener which is more lightweight and does not require array of dependencies.
 
 How to use this plugin
 ======================
@@ -30,7 +19,7 @@ You have two main options:
 
 **Clone from GitHub and build yourself** (recommended if you want the latest development version):
 ```bash
-git clone git@github.com:kulvait/KCT_zar_file_opener.git
+git clone git@github.com:kulvait/KCT_file_opener.git
 cd KCT_zar_file_opener
 ```
 
@@ -61,6 +50,20 @@ Code formating
 ```bash
 mvn spotless:apply
 ```
+
+Java Runtime
+------------
+
+Some clusters might not have a Java runtime installed.  
+This project was **built and tested with Java 17 (Temurin)**:
+
+Download via [Adoptium](https://adoptium.net/temurin/releases/?version=17) or via package manager:
+
+```bash
+apt-get install temurin-17-jre
+```
+
+Tested with [Java 17 temurin](https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.9%2B9/OpenJDK17U-debugimage_x64_linux_hotspot_17.0.9_9.tar.gz).
 
 ## Drag and drop
 
