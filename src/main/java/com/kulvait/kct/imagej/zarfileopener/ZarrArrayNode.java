@@ -14,8 +14,11 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+// Zarr Java library
 import dev.zarr.zarrjava.store.StoreHandle;
 import dev.zarr.zarrjava.store.Store;
+import dev.zarr.zarrjava.core.ArrayMetadata;
+import dev.zarr.zarrjava.core.DataType;
 
 // Java logging
 import java.util.logging.Logger;
@@ -25,27 +28,40 @@ import java.util.logging.Level;
 public class ZarrArrayNode extends ZarrNode {
     private static final Logger logger = Logger.getLogger(ZarrArrayNode.class.getName());
     private long[] shape;
-    private String dtype;
+    private int[] chunkShape;
+    private DataType dtype;
     private boolean valid = true;
     private String errorMessage;
+    private ArrayMetadata metadata = null;
+    private boolean isInfoLoaded = false;
+
+    private void loadInfo() {
+        if (isInfoLoaded) {
+            return;
+        }
+        metadata = root.getArrayMetadata(zarrPath);
+        shape = metadata.shape;
+        dtype = metadata.dataType();
+        chunkShape = metadata.chunkShape();
+        isInfoLoaded = true;
+    }
 
     public ZarrArrayNode(String[] zarrPath, ZarrNode parent, ZarrRootNode root) {
         super(zarrPath, parent, root, ZarrNodeType.ARRAY);
     }
 
-    public void setShape(long[] shape) {
-        this.shape = shape;
-    }
-
-    public void setDtype(String dtype) {
-        this.dtype = dtype;
-    }
-
     public long[] getShape() {
+        loadInfo();
         return shape;
     }
 
-    public String getDtype() {
+    public int[] getChunkShape() {
+        loadInfo();
+        return chunkShape;
+    }
+
+    public DataType getDataType() {
+        loadInfo();
         return dtype;
     }
 

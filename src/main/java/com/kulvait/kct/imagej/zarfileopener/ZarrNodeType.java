@@ -13,6 +13,6 @@ package com.kulvait.kct.imagej.zarfileopener;
  * Enum representing the type of a Zarr node.
  */
 public enum ZarrNodeType {
-    ROOT, GROUP, ARRAY, CHUNK, ANNOTATION
+    ROOT, GROUP, ARRAY, CHUNK, ANNOTATION, UNKNOWN, NOTFOUND
 }
 

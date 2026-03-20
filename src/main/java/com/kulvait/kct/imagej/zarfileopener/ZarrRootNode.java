@@ -28,6 +28,7 @@ import java.nio.file.Path;
 import java.nio.file.Files;
 // Zarr Java library imports
 import dev.zarr.zarrjava.ZarrException;
+import dev.zarr.zarrjava.core.Node;
 import dev.zarr.zarrjava.core.Array;
 import dev.zarr.zarrjava.core.Group;
 import dev.zarr.zarrjava.core.ArrayMetadata;
@@ -45,6 +46,8 @@ public class ZarrRootNode extends ZarrNode {
     private String storeURI; // optional, for remote
     private boolean isZip;
     private boolean isTopLevelArray;
+    private Array topLevelArray = null; // Cache for the top-level array if it exists
+    private Group topLevelGroup = null; // Cache for the top-level group if it exists
     private boolean allKeysListCreated = false; // Flag to indicate if allKeys has been populated
     List<String[]> allKeys = null; // List of all keys in the store, to avoid repeated listing
     private boolean allKeysDirectoryCreated = false; // Flag to indicate if the directory tree has been built
@@ -70,6 +73,19 @@ public class ZarrRootNode extends ZarrNode {
             this.isZip = true;
         } else {
             this.isZip = false;
+        }
+        try {
+            this.topLevelArray = Array.open(handle.resolve(new String[0])); // Try to open the root as an array
+            this.isTopLevelArray = true; // If successful, it's a top-level array
+        } catch (Exception e) {
+            this.isTopLevelArray = false; // If it fails, it's not a top-level array
+            try {
+                this.topLevelGroup = Group.open(handle.resolve(new String[0])); // Try to open the root as a group
+            } catch (Exception ex) {
+                // If it also fails, it's neither an array nor a group, which is unexpected
+                String errorMessage = "Root of the Zarr store is neither an array nor a group, which is unexpected. Store path: " + getFullPath();
+                logger.log(Level.SEVERE, errorMessage, ex);
+            }
         }
         this.isTopLevelArray = this.isArray(new String[0]);// Check if the root itself is an array
         this.root = this; // root points to itself
@@ -148,6 +164,10 @@ public class ZarrRootNode extends ZarrNode {
         }
     }
 
+    private String getFullPath(String[] path) {
+        return "/" + String.join("/", path); // Join the path segments with "/" to create the full path
+    }
+
     private void listAllKeys() {
         if (allKeysListCreated) {
             return; // Already created, no need to list again
@@ -215,23 +235,195 @@ public class ZarrRootNode extends ZarrNode {
         return isTopLevelArray;
     }
 
+
+    public boolean chunkSignature(String[] key) {
+        if (key.length == 0) {
+            return false;
+        }
+
+        String first = key[0];
+
+        // --- Zarr v2: "0.1.2"
+        if (key.length == 1 && first.matches("\\d+(\\.\\d+)*")) {
+            return true;
+        }
+
+        // --- Zarr v3: "c/0/1/2"
+        if (first.equals("c")) {
+            for (int i = 1; i < key.length; i++) {
+                if (!key[i].matches("\\d+")) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    public ZarrNodeType estimateNodeType(String[] path) {
+        String pathStr = getFullPath(path);
+        if (this.isTopLevelArray) {
+            if (path.length == 0) {
+                return ZarrNodeType.ARRAY; // The root itself is a top-level array
+            } else {
+                String msg = String.format(
+                        "Path %s is not the root, but the root is a top-level array. return ZarrNodeType.NOTFOUND.",
+                        pathStr);
+                logger.log(Level.WARNING, msg);
+                return ZarrNodeType.NOTFOUND;
+            }
+        } else if (path.length == 0) {
+            return ZarrNodeType.GROUP; // The root itself is a group if it's not a top-level array
+        }
+        DirectoryNode node = directoryTree.getNode(path);
+        if (node == null) {
+            return ZarrNodeType.NOTFOUND; // If the path does not exist in the directory tree, it's not found
+        }
+        List<String> children = node.listChildren(new String[0]); // List immediate children of this node
+        if (children == null || children.isEmpty()) {
+            return ZarrNodeType.UNKNOWN; // If there are no children, we cannot determine if it's an array or group, so we return UNKNOWN
+        }
+        List<String[]> keys = node.list(new String[0]); // List all keys under this node
+//remove empty keys
+        keys = keys.stream().filter(k -> k.length > 0).collect(Collectors.toList());
+// I will count chunk signatures to help distinguish between arrays and groups, especially for v3 where both can have zarr.json metadata.
+// First filter keys which start as if they contain metadata, avoid ".zarray", ".zgroup", ".zattrs" and "zarr.json" as they are not chunk signatures
+        List<String[]> keys_nostartmetadata = keys.stream().filter(k -> {
+            String firstSegment = k[0];
+            return !(firstSegment.equals(".zarray") || firstSegment.equals(".zgroup") || firstSegment.equals(
+                    ".zattrs") || firstSegment.equals("zarr.json"));
+        }).collect(Collectors.toList());
+
+//Strip metadata leaves
+        List<String[]> keys_nometadata = keys_nostartmetadata.stream().filter(k -> {
+            String lastSegment = k[k.length - 1];
+            return !(lastSegment.equals(".zarray") || lastSegment.equals(".zgroup") || lastSegment.equals(
+                    ".zattrs") || lastSegment.equals("zarr.json"));
+        }).collect(Collectors.toList());
+// If the lenght of keys_nometadata is smaller than keys_nostartmetadata, it is not array and must be group
+        if (keys_nometadata.size() < keys_nostartmetadata.size()) {
+            if (children.contains("zarr.json") || children.contains(".zgroup")) {
+                return ZarrNodeType.GROUP; // If there are keys that look like metadata but do not have "c" as the last segment, it's likely a group
+            } else {
+                logger.warning(
+                        "Node at path " + getFullPath() + " has metadata-like keys but no 'c' chunk metadata, and does not have clear indicators of being a group. This is unexpected for a Zarr node.");
+                return ZarrNodeType.UNKNOWN; // If there are no clear indicators, we cannot determine
+            }
+        }
+// In array every key in keys_nometadata should have chunk signature
+        int chunkSignatureCount = 0;
+        for (String[] key : keys_nometadata) {
+            if (chunkSignature(key)) {
+                chunkSignatureCount++;
+            }
+        }
+// If it is group it should not have any chunk signatures
+        if (chunkSignatureCount == 0) {
+            if (children.contains("zarr.json") || children.contains(".zgroup")) {
+                return ZarrNodeType.GROUP; // If there are keys that look like metadata but do not have "c" as the last segment, it's likely a group
+            } else {
+                logger.warning(
+                        "Node at path " + getFullPath() + " has no chunk suggesting group but no metadata.");
+                return ZarrNodeType.UNKNOWN; // If there are no clear indicators, we cannot determine
+            }
+        } else if (chunkSignatureCount == keys_nometadata.size()) {
+            if (children.contains("zarr.json") || children.contains(".zarray")) {
+                return ZarrNodeType.ARRAY; // If all keys that look like metadata have chunk
+            } else {
+                logger.warning(
+                        "Node at path " + getFullPath() + " has only chunk signatures, suggesting array but no metadata.");
+                return ZarrNodeType.UNKNOWN; // If there are no clear indicators, we cannot determine
+            }
+        } else {
+            logger.warning(
+                    "Node at path " + getFullPath() + " has some chunk signatures indicating array but some other signatures indicating group!");
+            return ZarrNodeType.UNKNOWN; // If there are no clear indicators, we cannot determine
+        }
+    }
+
+    public ZarrNodeType arrayOrGroup(String[] path) {
+        if (this.isTopLevelArray) {
+            if (path.length == 0) {
+                return ZarrNodeType.ARRAY; // The root itself is a top-level array
+            } else {
+                return ZarrNodeType.UNKNOWN; // Any non-root path cannot be an array if the root is a top-level array, and we cannot determine if it's a group without trying to open it
+            }
+        } else if (path.length == 0) {
+            return ZarrNodeType.GROUP; // The root itself is a group if it's not a top-level array
+        }
+        try {
+            Node node = this.topLevelGroup.get(path);
+            if (node instanceof Array) {
+                return ZarrNodeType.ARRAY; // If the node can be opened as an array, it's an array
+            } else if (node instanceof Group) {
+                return ZarrNodeType.GROUP; // If the node can be opened as a group, it's a group
+            } else {
+                return ZarrNodeType.UNKNOWN; // If it cannot be opened as either, it's unknown
+            }
+        } catch (Exception e) {
+            return ZarrNodeType.NOTFOUND;
+        }
+    }
+
     /** Check if a path inside this handle is a Zarr array */
     public boolean isArray(String[] path) {
+        if (this.isTopLevelArray) {
+            if (path.length == 0) {
+                return true; // The root itself is a top-level array
+            } else {
+                return false; // Any non-root path cannot be an array if the root is a top-level array
+            }
+        }
+        try {
+            Node node = this.topLevelGroup.get(path);
+            if (node instanceof Array) {
+                return true; // If the node can be opened as an array, it's an array
+            }
+            return false; // If it cannot be opened as an array, it's not an array
+        } catch (Exception e) {
+            return false; // If there is an error accessing the node, we cannot determine if it's an array, so we return false
+        }
+        /*
         try {
             Array.open(handle.resolve(path));
             return true;
         } catch (Exception e) {
             return false;
         }
+        */
+    }
+
+    public ArrayMetadata getArrayMetadata(String[] path) {
+        try {
+            Array array = Array.open(handle.resolve(path));
+            ArrayMetadata metadata = array.metadata();
+            return metadata;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** Check if a path inside this handle is a Zarr group */
     public boolean isGroup(String[] path) {
+        if (this.isTopLevelArray) {
+            return false; // If the root is a top-level array, there cannot be any groups
+        }
+        try {
+            Node node = this.topLevelGroup.get(path);
+            if (node instanceof Group) {
+                return true; // If the node can be opened as a group, it's a group
+            }
+            return false; // If it cannot be opened as a group, it's not a group
+        } catch (Exception e) {
+            return false; // If there is an error accessing the node, we cannot determine if it's a group, so we return false
+        }
+        /*
         try {
             Group.open(handle.resolve(path));
             return true;
         } catch (Exception e) {
             return false;
-        }
+        }*/
     }
 }

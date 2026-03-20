@@ -119,18 +119,19 @@ public class ZarFileInfo {
 
     }
 
-    private void populateGroupContent(ZarrNode node, DefaultMutableTreeNode groupNode) {
+    private void populateGroupContent(ZarrNode node, DefaultMutableTreeNode jTreeNode) {
         if (node != null) {
             List<ZarrNode> children = node.getChildren();
             for (ZarrNode child : children) {
-                DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child.getName());
-                groupNode.add(childNode);
+                DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child);
+                jTreeNode.add(childNode);
                 populateGroupContent(child, childNode);
             }
         }
     }
 
-    public void getGroupContent(DefaultMutableTreeNode groupNode) {
+    /** Method to get the content of the root group and populate the provided DefaultMutableTreeNode */
+    public void getGroupContent(DefaultMutableTreeNode jTreeNode) {
         if (rootNode != null) {
             long startTime = System.currentTimeMillis();
             logger.log(Level.INFO, "Getting root children for group content for file: " + f.getName());
@@ -139,14 +140,23 @@ public class ZarFileInfo {
             long duration = endTime - startTime;
             logger.log(Level.INFO, "Time to get root children: " + duration + " ms");
             for (ZarrNode child : rootChildren) {
-                DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child.getName());
-                groupNode.add(childNode);
+                DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child);
+                jTreeNode.add(childNode);
                 ZarrNodeType type = child.getType();
                 if (type == ZarrNodeType.GROUP) {
                     populateGroupContent(child, childNode);
                 }
             }
         }
+    }
+
+    public DefaultMutableTreeNode getJTreeRootNode() {
+        if (rootNode == null) {
+            return null;
+        }
+        DefaultMutableTreeNode jTreeRoot = new DefaultMutableTreeNode(rootNode);
+        getGroupContent(jTreeRoot);
+        return jTreeRoot;
     }
 
 }

@@ -24,11 +24,23 @@ import javax.swing.JTree;
 import javax.swing.JScrollPane;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreePath;
+import javax.swing.tree.TreeSelectionModel;
+import javax.swing.event.TreeSelectionEvent;
+import javax.swing.event.TreeSelectionListener;
+
 import com.kulvait.kct.imagej.denfileopener.DenFileInfo;
 
+import dev.zarr.zarrjava.core.DataType;
+// Logger
+import java.util.logging.Logger;
+
 public class ZarOpenerAccessory extends JComponent implements PropertyChangeListener {
+    public static final Logger logger = Logger.getLogger(ZarOpenerAccessory.class.getName());
 
     private static final long serialVersionUID = 1L;
+    private TreeSelectionListener currentSelectionListener;
+    private ZarrNode selectedNode = null;
 
     File selectedFile = null;
 
@@ -143,6 +155,54 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
         fc.addPropertyChangeListener(this);
     }
 
+// --- method to create and attach the selection listener
+    private void installTreeSelectionListener(JTree tree) {
+        if (currentSelectionListener != null) {
+            tree.removeTreeSelectionListener(currentSelectionListener);
+        }
+
+        currentSelectionListener = new TreeSelectionListener() {
+            @Override
+            public void valueChanged(TreeSelectionEvent e) {
+                TreePath path = tree.getSelectionPath();
+                if (path == null) {
+                    selectedNode = null;
+                    return;
+                }
+                DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
+                selectedNode = (ZarrNode) node.getUserObject();
+                if (selectedNode != null) {
+                    // Handle the selection of the node here
+                    ZarrNodeType nodeType = selectedNode.getType();
+                    String nodeInfo = String.format("Selected node: %s, type: %s", selectedNode.getName(), nodeType);
+                    logger.info(nodeInfo);
+                    String nodeName = selectedNode.getName();
+                    if (nodeType == ZarrNodeType.ARRAY) {
+
+                        ZarrArrayNode arrayNode = (ZarrArrayNode) selectedNode;
+                        long[] shape = arrayNode.getShape();
+                        int[] chunkShape = arrayNode.getChunkShape();
+                        DataType dtype = arrayNode.getDataType();
+                        typeInfo.setText(String.format("%s %s, %s", nodeType, nodeName, dtype));
+                        typeInfo.setVisible(true);
+                        String msg = String.format("Node %s: type=%s, shape=%s, chunkShape=%s", arrayNode.getFullPath(),
+                                dtype, java.util.Arrays.toString(shape), java.util.Arrays.toString(chunkShape));
+                        logger.info(msg);
+                        dimInfo.setText("Shape: " + java.util.Arrays.toString(shape));
+                        dimInfo.setVisible(true);
+                        debugInfo.setText("Chunks: " + java.util.Arrays.toString(chunkShape));
+                        debugInfo.setVisible(true);
+                    } else {
+                        typeInfo.setText(String.format("%s %s", nodeName, nodeType));
+                        typeInfo.setVisible(true);
+                        dimInfo.setVisible(false);
+                    }
+                }
+            }
+        };
+        tree.addTreeSelectionListener(currentSelectionListener);
+    }
+
     public boolean isBoxSelected() {
         return virtualCheckBox.isSelected();
     }
@@ -181,6 +241,9 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
     public void updateInfo(File f) {
         ZarFileInfo zarInf = new ZarFileInfo(f);
         if (zarInf.isValidZarr()) {
+            nameInfo.setVisible(true);
+            typeInfo.setVisible(true);
+            //virtualCheckBox.setVisible(true);
             if (zarInf.isZipZarr()) {
                 nameInfo.setText(String.format("Zarr zip container"));
             } else {
@@ -190,17 +253,18 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
                 typeInfo.setText(String.format("TL array"));
             } else {
                 typeInfo.setText(String.format("Group"));
-//Populate Jtree with group content
-                DefaultMutableTreeNode root = new DefaultMutableTreeNode("/");
-                zarInf.getGroupContent(root);
-                DefaultTreeModel model = new DefaultTreeModel(root);
+                //Populate Jtree with group content
+                //DefaultMutableTreeNode root = new DefaultMutableTreeNode("/");
+                DefaultMutableTreeNode jTreeRoot = zarInf.getJTreeRootNode();
+                DefaultTreeModel model = new DefaultTreeModel(jTreeRoot);
                 arrayTree.setModel(model);
                 arrayTree.setRootVisible(false);
                 arrayTree.setShowsRootHandles(true);
+                arrayTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+                installTreeSelectionListener(arrayTree);
+                treeScrollPane.setVisible(true);
             }
-            virtualCheckBox.setVisible(true);
-
-
+            //virtualCheckBox.setSelected(true);
         } else {
             DenFileInfo denInf = new DenFileInfo(f);
             if (denInf.isValidDEN()) {
@@ -237,8 +301,8 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
                 debugInfo.setText("Not a valid Zarr or DEN file.");
                 noInfo.setText("No preview available.");
                 noInfo.setVisible(true);
-                virtualCheckBox.setVisible(true);
-                treeScrollPane.setVisible(true);
+                virtualCheckBox.setVisible(false);
+                treeScrollPane.setVisible(false);
             }
         }
     }
@@ -246,8 +310,8 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
     protected void paintComponent(Graphics g) {
         int componentWidth = getWidth();
         int componentHeight = getHeight();
-        String debugStr = String.format("w=%d, h=%d", componentWidth, componentHeight);
+        //String debugStr = String.format("w=%d, h=%d", componentWidth, componentHeight);
         // g.drawString(debugStr, 5, 10);
-        debugInfo.setText(debugStr);
+        //debugInfo.setText(debugStr);
     }
 }

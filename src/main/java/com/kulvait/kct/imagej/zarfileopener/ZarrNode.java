@@ -197,7 +197,7 @@ public abstract class ZarrNode {
             System.arraycopy(zarrPath, 0, childZarrPath, 0, zarrPath.length);
             childZarrPath[zarrPath.length] = child;
             String childPath = "/" + String.join("/", childZarrPath);
-            logger.fine("Processing child: %s".formatted(childPath));
+            //logger.fine("Processing child: %s".formatted(childPath));
             //First we test annotation and chunk nodes to avoid expensive calls to isGroup and isArray for nodes that are not groups or arrays.
             if (canHaveAnnotation(type) && isAnnotationPath(childZarrPath, zarrPath.length - 1)) {
                 // We test if the path corresponds to an annotation node, which are named like ".zarray", ".zgroup" or "zarr.json"
@@ -222,21 +222,30 @@ public abstract class ZarrNode {
                             childPath);
                     logger.fine(msg);
                 }
-            } else if (root.isGroup(childZarrPath)) {
-                ZarrGroupNode groupNode = new ZarrGroupNode(childZarrPath, this, root);
-                children.add(groupNode);
-                groupNode.createZarrTree(newDepth, includeAnnotationNodes, includeChunkNodes); // Recurse into group	
-            } else if (root.isArray(childZarrPath)) {
-                ZarrArrayNode arrayNode = new ZarrArrayNode(childZarrPath, this, root);
-                children.add(arrayNode);
             } else {
-                String msg = String.format(
-                        "%s is neither a group nor an array, and does not match annotation or chunk node patterns%n",
-                        childPath);
-                logger.warning(msg);
+//                ZarrNodeType nodeType = root.arrayOrGroup(childZarrPath);
+                ZarrNodeType nodeType = root.estimateNodeType(childZarrPath); // Estimate node type to avoid expensive calls to isGroup and isArray for nodes that are not groups or arrays
+                if (nodeType == ZarrNodeType.GROUP) {
+                    ZarrGroupNode groupNode = new ZarrGroupNode(childZarrPath, this, root);
+                    children.add(groupNode);
+                    groupNode.createZarrTree(newDepth, includeAnnotationNodes, includeChunkNodes); // Recurse into group	
+                } else if (nodeType == ZarrNodeType.ARRAY) {
+                    ZarrArrayNode arrayNode = new ZarrArrayNode(childZarrPath, this, root);
+                    children.add(arrayNode);
+                } else {
+                    String msg = String.format(
+                            "%s is neither a group nor an array, and does not match annotation or chunk node patterns%n",
+                            childPath);
+                    logger.warning(msg);
+                }
+                // Optionally handle annotation nodes and chunk nodes here if needed
             }
-            // Optionally handle annotation nodes and chunk nodes here if needed
         }
         isChildrenLoaded = true; // Mark children as loaded after processing
+    }
+
+    @Override
+    public String toString() {
+        return getName();
     }
 }
