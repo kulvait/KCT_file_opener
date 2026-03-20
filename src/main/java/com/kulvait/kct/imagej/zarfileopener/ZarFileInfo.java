@@ -132,7 +132,12 @@ public class ZarFileInfo {
 
     public void getGroupContent(DefaultMutableTreeNode groupNode) {
         if (rootNode != null) {
+            long startTime = System.currentTimeMillis();
+            logger.log(Level.INFO, "Getting root children for group content for file: " + f.getName());
             List<ZarrNode> rootChildren = rootNode.getChildren();
+            long endTime = System.currentTimeMillis();
+            long duration = endTime - startTime;
+            logger.log(Level.INFO, "Time to get root children: " + duration + " ms");
             for (ZarrNode child : rootChildren) {
                 DefaultMutableTreeNode childNode = new DefaultMutableTreeNode(child.getName());
                 groupNode.add(childNode);

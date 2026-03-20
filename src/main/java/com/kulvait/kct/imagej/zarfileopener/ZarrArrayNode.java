@@ -116,7 +116,7 @@ public class ZarrArrayNode extends ZarrNode {
                     logger.log(Level.FINE, "%s is a chunk key, but chunk nodes are not included%n".formatted(
                             childPath));
                 } else {
-                    System.out.printf("%s is neither a group nor an array%n", childPath);
+                    logger.log(Level.WARNING, "%s is neither a group nor an array%n".formatted(childPath));
                 }
 
 
