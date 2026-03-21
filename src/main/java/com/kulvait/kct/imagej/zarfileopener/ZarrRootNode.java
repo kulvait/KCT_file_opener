@@ -404,6 +404,14 @@ public class ZarrRootNode extends ZarrNode {
         }
     }
 
+    public Array getArray(String[] path) {
+        try {
+            return Array.open(handle.resolve(path));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** Check if a path inside this handle is a Zarr group */
     public boolean isGroup(String[] path) {
         if (this.isTopLevelArray) {

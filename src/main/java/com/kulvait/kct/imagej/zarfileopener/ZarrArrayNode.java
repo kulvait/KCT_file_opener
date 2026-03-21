@@ -18,6 +18,7 @@ import java.util.stream.Stream;
 import dev.zarr.zarrjava.store.StoreHandle;
 import dev.zarr.zarrjava.store.Store;
 import dev.zarr.zarrjava.core.ArrayMetadata;
+import dev.zarr.zarrjava.core.Array;
 import dev.zarr.zarrjava.core.DataType;
 
 // Java logging
@@ -32,18 +33,23 @@ public class ZarrArrayNode extends ZarrNode {
     private DataType dtype;
     private boolean valid = true;
     private String errorMessage;
+    private Array array = null;
     private ArrayMetadata metadata = null;
-    private boolean isInfoLoaded = false;
+    private boolean isArrayLoaded = false;
 
-    private void loadInfo() {
-        if (isInfoLoaded) {
+    private void initArray() {
+        if (isArrayLoaded) {
             return;
         }
-        metadata = root.getArrayMetadata(zarrPath);
-        shape = metadata.shape;
-        dtype = metadata.dataType();
-        chunkShape = metadata.chunkShape();
-        isInfoLoaded = true;
+        array = root.getArray(zarrPath);
+        if (array != null)
+            metadata = array.metadata();
+        if (metadata != null) {
+            shape = metadata.shape;
+            dtype = metadata.dataType();
+            chunkShape = metadata.chunkShape();
+        }
+        isArrayLoaded = true;
     }
 
     public ZarrArrayNode(String[] zarrPath, ZarrNode parent, ZarrRootNode root) {
@@ -51,17 +57,17 @@ public class ZarrArrayNode extends ZarrNode {
     }
 
     public long[] getShape() {
-        loadInfo();
+        initArray();
         return shape;
     }
 
     public int[] getChunkShape() {
-        loadInfo();
+        initArray();
         return chunkShape;
     }
 
     public DataType getDataType() {
-        loadInfo();
+        initArray();
         return dtype;
     }
 
@@ -76,6 +82,19 @@ public class ZarrArrayNode extends ZarrNode {
 
     public String getErrorMessage() {
         return errorMessage;
+    }
+
+    public ucar.ma2.Array readArray(final long[] offset, final long[] shape) {
+        initArray();
+        try {
+            if (array == null) {
+                throw new RuntimeException("Array is not initialized");
+            }
+            return array.read(offset, shape);
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "Error reading array data: " + e.getMessage(), e);
+            return null;
+        }
     }
 
 

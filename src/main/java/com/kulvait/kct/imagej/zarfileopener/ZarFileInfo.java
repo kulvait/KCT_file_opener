@@ -18,6 +18,9 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Arrays;
 import java.util.List;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipEntry;
+import java.util.Enumeration;
 // Logging imports
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -50,6 +53,44 @@ public class ZarFileInfo {
         }
     }
 
+    private boolean checkIfPathContainsZarrMetadata(Path path) {
+        try {
+            if (path.toFile().isFile()) {
+                // If it's a file, we check if it's a ZIP file, if not, we consider it not a valid Zarr container
+                if (checkIfZip(path)) {
+                    try (ZipFile zipFile = new ZipFile(path.toFile())) {
+                        Enumeration<? extends ZipEntry> entries = zipFile.entries();
+                        while (entries.hasMoreElements()) {
+                            ZipEntry entry = entries.nextElement();
+                            String name = entry.getName();
+
+                            // Check only top-level files (ignore directories inside ZIP)
+                            if (!entry.isDirectory() && !name.contains("/")) {
+                                if (name.equals(".zgroup") || name.equals(".zarray") || name.equals("zarr.json")) {
+                                    return true;
+                                }
+                            }
+                        }
+                    } catch (IOException e) {
+                        logger.log(Level.WARNING, "Error reading zip file: " + e.getMessage(), e);
+                    }
+                    return false; // ZIP file but no Zarr metadata found
+
+
+                }
+            } else if (path.toFile().isDirectory()) {
+                // If it's a directory, we check if it contains Zarr metadata files
+                return Files.list(path).anyMatch(p -> p.getFileName().toString().equals(
+                        ".zgroup") || p.getFileName().toString().equals(".zarray") || p.getFileName().toString().equals(
+                                "zarr.json"));
+            }
+            return false;
+        } catch (IOException e) {
+            logger.log(Level.WARNING, "Error checking directory contents: " + e.getMessage(), e);
+            return false;
+        }
+    }
+
     ZarFileInfo(File f) {
         this.f = f;
         Path path = f.toPath();
@@ -65,6 +106,13 @@ public class ZarFileInfo {
         boolean isZip = false;
         if (isFile) {
             isZip = checkIfZip(path);
+        }
+        // This is not to build expensive structure on no metadata
+        boolean hasZarrMetadata = checkIfPathContainsZarrMetadata(path);
+        if (!hasZarrMetadata) {
+            System.out.println("No Zarr metadata found in: " + path);
+            validZarr = false;
+            return;
         }
         StoreHandle store = null;
         try {
@@ -94,6 +142,10 @@ public class ZarFileInfo {
                 validZarr = false;
             }
         }
+    }
+
+    public ZarrRootNode getRoot() {
+        return rootNode;
     }
 
     public boolean isValidZarr() {
@@ -157,6 +209,10 @@ public class ZarFileInfo {
         DefaultMutableTreeNode jTreeRoot = new DefaultMutableTreeNode(rootNode);
         getGroupContent(jTreeRoot);
         return jTreeRoot;
+    }
+
+    public File getFile() {
+        return f;
     }
 
 }

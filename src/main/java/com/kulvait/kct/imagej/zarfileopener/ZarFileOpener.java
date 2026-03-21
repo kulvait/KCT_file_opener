@@ -37,11 +37,15 @@ import java.util.logging.ConsoleHandler;
 // Zarr Java library imports
 import dev.zarr.zarrjava.core.Array;
 import dev.zarr.zarrjava.core.ArrayMetadata;
+import dev.zarr.zarrjava.core.DataType;
 import dev.zarr.zarrjava.store.ReadOnlyZipStore;
 import dev.zarr.zarrjava.store.FilesystemStore;
 import dev.zarr.zarrjava.store.StoreHandle;
 import dev.zarr.zarrjava.ZarrException;
-
+// DEN file opener
+import com.kulvait.kct.imagej.denfileopener.DenFileInfo;
+import com.kulvait.kct.imagej.denfileopener.DenDataType;
+import com.kulvait.kct.imagej.denfileopener.DenVirtualStack;
 
 /**
  * Uses the JFileChooser from Swing to open one or more raw images. The "Open
@@ -74,17 +78,19 @@ public class ZarFileOpener implements PlugIn {
 
         logger.info("Logger initialized at FINE level");
         try {
+            String[] path = null; // Placeholder for potential path argument parsing
             boolean useVirtualStack;
             if (arg.equals("")) {
                 if (openFilesDialog() == false) {
                     return;
                 }
                 useVirtualStack = zarAccessory.isBoxSelected();
+                path = zarAccessory.getSelectedZarrPath();
             } else {
                 file = new File(arg);
                 useVirtualStack = true;
             }
-            openZar(useVirtualStack);
+            openZar(path, useVirtualStack);
         } catch (IOException e) {
             System.out.printf("%s ERROR", e.toString());
         }
@@ -97,6 +103,8 @@ public class ZarFileOpener implements PlugIn {
                 public void run() {
                     JFileChooser fc = new JFileChooser();
                     fc.setDialogTitle("Open Zarr file...");
+                    //This might crash accessory not implemented!
+                    //fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
                     zarAccessory = new ZarOpenerAccessory(fc);
                     fc.setAccessory(zarAccessory);
                     fc.setMultiSelectionEnabled(false);
@@ -220,127 +228,92 @@ public class ZarFileOpener implements PlugIn {
         }
     }
 
-    private void openZar(boolean useVirtualStack) throws IOException {
-        Path path = file.toPath();
-
-        // Check if it's a file or folder
-        if (!Files.exists(path)) {
-            System.out.println("File does not exist: " + path);
-            return;
-        }
-
-        boolean isDirectory = Files.isDirectory(path);
-        boolean isFile = Files.isRegularFile(path);
-
-        System.out.println("Path: " + path);
-        System.out.println("Is directory? " + isDirectory);
-        System.out.println("Is file? " + isFile);
-
-        // Try to detect if it's a ZIP file (basic check)
-        boolean isZip = false;
-        if (isFile) {
-            try (InputStream in = Files.newInputStream(path)) {
-                byte[] signature = new byte[4];
-                if (in.read(signature) == 4) {
-                    // ZIP files start with "PK\003\004"
-                    isZip = signature[0] == 'P' && signature[1] == 'K' && signature[2] == 3 && signature[3] == 4;
+    private void openZar(String[] path, boolean useVirtualStack) throws IOException {
+        String zarrPath = "/" + String.join("/", path);
+        ZarFileInfo zarInf = new ZarFileInfo(file);
+        ImagePlus img;
+        if (zarInf.isValidZarr()) {
+            System.out.println("File is a valid Zarr store, inspecting contents...");
+            ZarrRootNode root = zarInf.getRootNode();
+            root.createZarrTree(-1, false, false); // depth -1 for full
+            if (root.isArray(path)) {
+                System.out.println("Path " + path + " is a Zarr array, opening...");
+                ZarrArrayNode arrayNode = (ZarrArrayNode) root.getDescendant(path);
+                long[] shape = arrayNode.getShape();
+                int[] chunkShape = arrayNode.getChunkShape();
+                DataType dtype = arrayNode.getDataType();
+                if (shape.length > 3) {
+                    String msg = String.format(
+                            "Array at path %s has shape %s, which has more than 3 dimensions, cannot open as image.",
+                            "/" + "".join("/", path), Arrays.toString(shape));
+                    logger.log(Level.SEVERE, msg);
+                    return;
                 }
-            } catch (IOException e) {
-                System.out.println("Cannot read file signature: " + e.getMessage());
-            }
-        }
-        System.out.println("Is ZIP file? " + isZip);
-
-        // Attempt to open as Zarr (v2 or v3 auto-detect)
-        try {
-            inspectZarrStore(path); // Optional: list store contents before opening
-                                   // array
-            dev.zarr.zarrjava.core.Array array;
-            if (isZip) {
-                System.out.println("Attempting to open as Zarr ZIP store...");
-                ReadOnlyZipStore zipStore = new ReadOnlyZipStore(path);
-                array = dev.zarr.zarrjava.core.Array.open(zipStore.resolve()); // root
-                                                                              // handle
+                ZarVirtualStack vstack = new ZarVirtualStack(zarInf, path);
+                int frameCount = vstack.getFrameCount();
+                img = new ImagePlus(file.getName() + zarrPath, vstack);
+                if (img != null) {
+                    if (IJ.getVersion().compareTo("1.50e") >= 0)
+                        img.setIJMenuBar(true);
+                    img.show();
+                    img.setZ((int) ((frameCount + 1) / 2));
+                    img.updateAndDraw();
+                }
             } else {
-                array = dev.zarr.zarrjava.core.Array.open(path);
+                String msg = String.format("Path %s in %s is not a Zarr array, cannot open as image.", "/" + "".join(
+                        "/", path), file.getName());
+                logger.log(Level.SEVERE, msg);
             }
-
-            dev.zarr.zarrjava.core.ArrayMetadata meta = array.metadata();
-            final int[] chunkShape = meta.chunkShape();
-
-            System.out.println("Detected Zarr array!");
-            System.out.println("Shape: " + Arrays.toString(meta.shape));
-            System.out.println("Chunk shape: " + Arrays.toString(chunkShape));
-            System.out.println("Data type: " + meta.dataType());
-
-        } catch (IOException e) {
-            System.out.println("I/O error while accessing the Zarr store: " + e.getMessage());
-        } catch (ZarrException e) {
-            System.out.println("Not a valid Zarr array: " + e.getMessage());
-        } catch (Exception e) {
-            System.out.println("Excerption: " + e.getMessage());
-        }
-        /*
+        } else {
             DenFileInfo inf = new DenFileInfo(file);
-            if(!inf.isValidDEN())
-            {
+            if (!inf.isValidDEN()) {
                 throw new RuntimeException(String.format("File %s is not valid DEN!", file.getName()));
-            } else
-            {
+            } else {
                 OpenDialog.setLastDirectory(directory);
                 Prefs.set("options.denlastdir", directory);
                 Prefs.savePreferences();
                 System.out.println(
-                    String.format("Storing directory %s.", Prefs.getString(".options.denlastdir")));
+                        String.format("Storing directory %s.", Prefs.getString(".options.denlastdir")));
             }
             FileInfo fi = new FileInfo();
             fi.fileFormat = FileInfo.RAW;
             fi.fileName = file.getName();
             fi.directory = directory;
-            fi.width = (int)inf.getDimx();
-            fi.height = (int)inf.getDimy();
-            fi.offset = (int)inf.getDataByteOffset();
-            fi.nImages = (int)inf.getDimz();
+            fi.width = (int) inf.getDimx();
+            fi.height = (int) inf.getDimy();
+            fi.offset = (int) inf.getDataByteOffset();
+            fi.nImages = (int) inf.getDimz();
             fi.gapBetweenImages = 0;
             fi.intelByteOrder = true; // little endian
             fi.whiteIsZero = false; // can be adjusted
             DenDataType typ = inf.getElementType();
-            if(typ == DenDataType.UINT8)
-            {
+            if (typ == DenDataType.UINT8) {
                 fi.fileType = FileInfo.GRAY8;
-            } else if(typ == DenDataType.UINT16)
-            {
+            } else if (typ == DenDataType.UINT16) {
                 fi.fileType = FileInfo.GRAY16_UNSIGNED;
-            } else if(typ == DenDataType.FLOAT32)
-            {
+            } else if (typ == DenDataType.FLOAT32) {
                 fi.fileType = FileInfo.GRAY32_FLOAT;
-            } else if(typ == DenDataType.FLOAT64)
-            {
+            } else if (typ == DenDataType.FLOAT64) {
                 fi.fileType = FileInfo.GRAY64_FLOAT;
-            } else if(typ == DenDataType.UINT32)
-            {
+            } else if (typ == DenDataType.UINT32) {
                 fi.fileType = FileInfo.GRAY32_UNSIGNED;
-            } else
-            {
+            } else {
                 throw new RuntimeException(
-                    String.format("The type %s is not implemented yet!", typ.name()));
+                        String.format("The type %s is not implemented yet!", typ.name()));
             }
-            ImagePlus img;
-            if(useVirtualStack)
-            {
+            if (useVirtualStack) {
                 img = new ImagePlus(file.getName(), new DenVirtualStack(file));
-            } else
-            {
+            } else {
                 FileOpener fo = new FileOpener(fi);
                 img = fo.open(false);
             }
-            if(img != null)
-            {
-                if(IJ.getVersion().compareTo("1.50e") >= 0)
+            if (img != null) {
+                if (IJ.getVersion().compareTo("1.50e") >= 0)
                     img.setIJMenuBar(true);
                 img.show();
-                img.setZ((int)((inf.getDim(2) + 1) / 2));
+                img.setZ((int) ((inf.getDim(2) + 1) / 2));
                 img.updateAndDraw();
-            }*/
+            }
+        }
     }
 }

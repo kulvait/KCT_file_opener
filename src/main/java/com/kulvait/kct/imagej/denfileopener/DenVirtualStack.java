@@ -37,7 +37,7 @@ public class DenVirtualStack extends ImageStack {
     DenDataType typ;
     float[] pixelArray;
 
-    DenVirtualStack(File f) throws IOException {
+    public DenVirtualStack(File f) throws IOException {
         this.f = f;
         this.inf = new DenFileInfo(f);
         if (!inf.isValidDEN()) {

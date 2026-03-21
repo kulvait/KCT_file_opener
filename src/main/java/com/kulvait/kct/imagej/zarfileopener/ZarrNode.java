@@ -80,6 +80,21 @@ public abstract class ZarrNode {
         return children;
     }
 
+    public ZarrNode getChild(String name) {
+        return getChildren().stream().filter(child -> child.getName().equals(name)).findFirst().orElse(null);
+    }
+
+    public ZarrNode getDescendant(String[] path) {
+        ZarrNode currentNode = this;
+        for (String part : path) {
+            currentNode = currentNode.getChild(part);
+            if (currentNode == null) {
+                return null; // Path does not exist
+            }
+        }
+        return currentNode;
+    }
+
     // Static utility method
     public static boolean isZarrArray(StoreHandle store, String[] path) {
 //Strip leading slash if present, as Zarr Java library expects relative paths

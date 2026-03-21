@@ -203,6 +203,14 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
         tree.addTreeSelectionListener(currentSelectionListener);
     }
 
+    public String[] getSelectedZarrPath() {
+        if (selectedNode == null) {
+            return null;
+        }
+
+        return selectedNode.getZarrPath();
+    }
+
     public boolean isBoxSelected() {
         return virtualCheckBox.isSelected();
     }
