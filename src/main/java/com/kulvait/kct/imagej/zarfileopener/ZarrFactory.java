@@ -40,7 +40,7 @@ import dev.zarr.zarrjava.store.Store;
 import dev.zarr.zarrjava.store.ZipStore;
 
 
-public class ZarrRootNode extends ZarrNode {
+public class ZarrFactory {
     StoreHandle handle;
     private String storePath; // folder, zip, or URI
     private String storeURI; // optional, for remote
@@ -52,20 +52,21 @@ public class ZarrRootNode extends ZarrNode {
     List<String[]> allKeys = null; // List of all keys in the store, to avoid repeated listing
     private boolean allKeysDirectoryCreated = false; // Flag to indicate if the directory tree has been built
     DirectoryNode directoryTree = null; // In-memory representation of the directory structure
+    private static final Logger logger = Logger.getLogger(ZarrFactory.class.getName());
+    ZarrNode root = null; // The root node of the Zarr store, which can be either an array or a group
 
-    public ZarrRootNode(StoreHandle handle) {
-        super(new String[0], null, null, ZarrNodeType.ROOT);
-        System.out.println("Creating ZarrRootNode with provided StoreHandle");
+    public ZarrFactory(StoreHandle handle) {
+        System.out.println("Creating ZarrFactory with provided StoreHandle");
         this.handle = handle;
         try {
             Path storePathIN = handle.toPath();
             this.storePath = storePathIN.toString();
             System.out.println(
-                    "Creating ZarrRootNode for Zarr store in " + this.storePath);
+                    "Creating ZarrFactory for Zarr store in " + this.storePath);
             this.storeURI = null;
         } catch (Exception e) {
             System.out.println(
-                    "Creating ZarrRootNode for Zarr store with non-path handle, using URI if available");
+                    "Creating ZarrFactory for Zarr store with non-path handle, using URI if available");
             this.storePath = null;
             this.storeURI = null;
         }
@@ -75,23 +76,26 @@ public class ZarrRootNode extends ZarrNode {
             this.isZip = false;
         }
         try {
-            this.topLevelArray = Array.open(handle.resolve(new String[0])); // Try to open the root as an array
+            Array array = Array.open(handle.resolve(new String[0])); // Try to open the root as an array
+            this.topLevelArray = array; // Cache the top-level array if it exists
+            root = new ZarrArrayNode(new String[0], null, this, array); // Create a ZarrArrayNode for the root if it's an array
             this.isTopLevelArray = true; // If successful, it's a top-level array
         } catch (Exception e) {
             this.isTopLevelArray = false; // If it fails, it's not a top-level array
             try {
                 this.topLevelGroup = Group.open(handle.resolve(new String[0])); // Try to open the root as a group
+                root = new ZarrGroupNode(new String[0], null, this); // Create a ZarrGroupNode for the root if it's a group	
             } catch (Exception ex) {
                 // If it also fails, it's neither an array nor a group, which is unexpected
-                String errorMessage = "Root of the Zarr store is neither an array nor a group, which is unexpected. Store path: " + getFullPath();
+                String errorMessage = "Root of the Zarr store is neither an array nor a group, which is unexpected. Store path: " + getStorePath();
                 logger.log(Level.SEVERE, errorMessage, ex);
+                throw new RuntimeException(errorMessage, ex); // Throw a runtime exception to indicate a critical error in the Zarr store structure
             }
         }
         this.isTopLevelArray = this.isArray(new String[0]);// Check if the root itself is an array
-        this.root = this; // root points to itself
         buildDirectoryTree(); // Build the directory tree for efficient lookups
         logger.info(
-                "ZarrRootNode created for store: " + getFullPath() + ", isZip: " + isZip + ", isTopLevelArray: " + isTopLevelArray);
+                "ZarrFactory created for store: " + getStorePath() + ", isZip: " + isZip + ", isTopLevelArray: " + isTopLevelArray);
     }
 
 //Class for node transition
@@ -175,15 +179,16 @@ public class ZarrRootNode extends ZarrNode {
         Store store = handle.store;
         if (store instanceof Store.ListableStore) {
             Store.ListableStore listableStore = (Store.ListableStore) store;
+            String[] zarrPath = new String[0]; // Start listing from the root
             try (Stream<String[]> allKeysStream = listableStore.list(zarrPath)) {
                 allKeys = allKeysStream.collect(Collectors.toList());
             } catch (Exception e) {
-                logger.log(Level.SEVERE, "Error listing children for path: " + getFullPath(), e);
+                logger.log(Level.SEVERE, "Error listing children for strore: " + getStorePath() + ".", e);
             }
         } else {
             logger.warning(
-                    "Store of type %s does not support listing children. Cannot list children for path: %s".formatted(
-                            store.getClass().getName(), getFullPath()));
+                    "Store %s of type %s does not support listing children!".formatted(getStorePath(),
+                            store.getClass().getName()));
         }
         allKeysListCreated = true; // Mark that all keys have been listed
     }
@@ -193,7 +198,7 @@ public class ZarrRootNode extends ZarrNode {
         if (allKeysDirectoryCreated) {
             return; // Already created, no need to build again
         }
-        logger.info("Building directory tree for Zarr store: " + getFullPath());
+        logger.info("Building directory tree for Zarr store: " + getStorePath());
         long startTime = System.currentTimeMillis();
         listAllKeys(); // Ensure all keys are listed before building the tree
         directoryTree = new DirectoryNode(null); // Root of the directory tree
@@ -307,7 +312,8 @@ public class ZarrRootNode extends ZarrNode {
                 return ZarrNodeType.GROUP; // If there are keys that look like metadata but do not have "c" as the last segment, it's likely a group
             } else {
                 logger.warning(
-                        "Node at path " + getFullPath() + " has metadata-like keys but no 'c' chunk metadata, and does not have clear indicators of being a group. This is unexpected for a Zarr node.");
+                        "Node at path " + getFullPath(
+                                path) + " has metadata-like keys but no 'c' chunk metadata, and does not have clear indicators of being a group. This is unexpected for a Zarr node.");
                 return ZarrNodeType.UNKNOWN; // If there are no clear indicators, we cannot determine
             }
         }
@@ -324,7 +330,7 @@ public class ZarrRootNode extends ZarrNode {
                 return ZarrNodeType.GROUP; // If there are keys that look like metadata but do not have "c" as the last segment, it's likely a group
             } else {
                 logger.warning(
-                        "Node at path " + getFullPath() + " has no chunk suggesting group but no metadata.");
+                        "Node at path " + getFullPath(path) + " has no chunk suggesting group but no metadata.");
                 return ZarrNodeType.UNKNOWN; // If there are no clear indicators, we cannot determine
             }
         } else if (chunkSignatureCount == keys_nometadata.size()) {
@@ -332,12 +338,14 @@ public class ZarrRootNode extends ZarrNode {
                 return ZarrNodeType.ARRAY; // If all keys that look like metadata have chunk
             } else {
                 logger.warning(
-                        "Node at path " + getFullPath() + " has only chunk signatures, suggesting array but no metadata.");
+                        "Node at path " + getFullPath(
+                                path) + " has only chunk signatures, suggesting array but no metadata.");
                 return ZarrNodeType.UNKNOWN; // If there are no clear indicators, we cannot determine
             }
         } else {
             logger.warning(
-                    "Node at path " + getFullPath() + " has some chunk signatures indicating array but some other signatures indicating group!");
+                    "Node at path " + getFullPath(
+                            path) + " has some chunk signatures indicating array but some other signatures indicating group!");
             return ZarrNodeType.UNKNOWN; // If there are no clear indicators, we cannot determine
         }
     }
@@ -433,5 +441,9 @@ public class ZarrRootNode extends ZarrNode {
         } catch (Exception e) {
             return false;
         }*/
+    }
+
+    public ZarrNode getRootNode() {
+        return root;
     }
 }

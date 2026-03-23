@@ -34,17 +34,17 @@ public abstract class ZarrNode {
     protected String[] zarrPath;
     protected String name;
     protected ZarrNode parent;
-    protected ZarrRootNode root;
+    protected ZarrFactory factory;
     protected ZarrNodeType type;
 
     // NEW: List of child nodes
     protected List<ZarrNode> children = new ArrayList<>();
     protected boolean isChildrenLoaded = false; // Flag to track if children have been loaded
 
-    public ZarrNode(String[] zarrPath, ZarrNode parent, ZarrRootNode root, ZarrNodeType type) {
+    public ZarrNode(String[] zarrPath, ZarrNode parent, ZarrFactory factory, ZarrNodeType type) {
         this.zarrPath = zarrPath;
         this.parent = parent;
-        this.root = root;
+        this.factory = factory;
         this.type = type;
         this.name = zarrPath.length > 0 ? zarrPath[zarrPath.length - 1] : "/";
     }
@@ -57,8 +57,8 @@ public abstract class ZarrNode {
         return parent;
     }
 
-    public ZarrRootNode getRoot() {
-        return root;
+    public ZarrFactory getFactory() {
+        return factory;
     }
 
     public ZarrNodeType getType() {
@@ -75,7 +75,7 @@ public abstract class ZarrNode {
 
     public List<ZarrNode> getChildren() {
         if (!isChildrenLoaded) {
-            createZarrTree(-1, false, false); // Load children if not already loaded
+            createZarrTree(1, false, false); // Load children if not already loaded
         }
         return children;
     }
@@ -116,11 +116,11 @@ public abstract class ZarrNode {
     }
 
     public List<String> listChildren() {
-        return root.listChildren(zarrPath); // Ensure the root has the latest information about children
+        return factory.listChildren(zarrPath); // Ensure the factory has the latest information about children
     }
 
     public List<String[]> list() {
-        return root.list(zarrPath); // Ensure the root has the latest information about children
+        return factory.list(zarrPath); // Ensure the factory has the latest information about children
     }
 
     public boolean isAnnotationPath(String[] path, int groupOrArrayIndex) {
@@ -178,7 +178,7 @@ public abstract class ZarrNode {
     }
 
     private boolean canHaveAnnotation(ZarrNodeType nodeType) {
-        return nodeType == ZarrNodeType.GROUP || nodeType == ZarrNodeType.ARRAY || nodeType == ZarrNodeType.ROOT;
+        return nodeType == ZarrNodeType.GROUP || nodeType == ZarrNodeType.ARRAY;
     }
 
 
@@ -218,7 +218,7 @@ public abstract class ZarrNode {
                 // We test if the path corresponds to an annotation node, which are named like ".zarray", ".zgroup" or "zarr.json"
                 if (includeAnnotationNodes) {
                     System.out.printf("%s is an annotation node%n", childPath);
-                    ZarrAnnotationNode annotationNode = new ZarrAnnotationNode(childZarrPath, this, root);
+                    ZarrAnnotationNode annotationNode = new ZarrAnnotationNode(childZarrPath, this, factory);
                     children.add(annotationNode);
                 } else {
                     //                  String msg = String.format(
@@ -230,7 +230,7 @@ public abstract class ZarrNode {
                 // We test if the path corresponds to a chunk of an array, which are named like "0.1.2" or "c/0/1/2"
                 if (includeChunkNodes) {
                     System.out.printf("%s is a chunk node%n", childPath);
-                    ZarrChunkNode chunkNode = new ZarrChunkNode(childZarrPath, this, root);
+                    ZarrChunkNode chunkNode = new ZarrChunkNode(childZarrPath, this, factory);
                     children.add(chunkNode);
                 } else {
                     String msg = String.format("%s is a chunk node, but chunk nodes are not included%n",
@@ -238,14 +238,14 @@ public abstract class ZarrNode {
                     logger.fine(msg);
                 }
             } else {
-//                ZarrNodeType nodeType = root.arrayOrGroup(childZarrPath);
-                ZarrNodeType nodeType = root.estimateNodeType(childZarrPath); // Estimate node type to avoid expensive calls to isGroup and isArray for nodes that are not groups or arrays
+//                ZarrNodeType nodeType = factory.arrayOrGroup(childZarrPath);
+                ZarrNodeType nodeType = factory.estimateNodeType(childZarrPath); // Estimate node type to avoid expensive calls to isGroup and isArray for nodes that are not groups or arrays
                 if (nodeType == ZarrNodeType.GROUP) {
-                    ZarrGroupNode groupNode = new ZarrGroupNode(childZarrPath, this, root);
+                    ZarrGroupNode groupNode = new ZarrGroupNode(childZarrPath, this, factory);
                     children.add(groupNode);
                     groupNode.createZarrTree(newDepth, includeAnnotationNodes, includeChunkNodes); // Recurse into group	
                 } else if (nodeType == ZarrNodeType.ARRAY) {
-                    ZarrArrayNode arrayNode = new ZarrArrayNode(childZarrPath, this, root);
+                    ZarrArrayNode arrayNode = new ZarrArrayNode(childZarrPath, this, factory);
                     children.add(arrayNode);
                 } else {
                     String msg = String.format(

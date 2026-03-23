@@ -15,11 +15,15 @@ package com.kulvait.kct.imagej.zarfileopener;
  * zarrPath thus corresponds to the path to the array to which the chunk belongs, and not to the chunk itself.
  */
 public class ZarrChunkNode extends ZarrNode {
-    private long byteSize;
+    private long byteSize = -1;
 
-    public ZarrChunkNode(String[] zarrPath, ZarrNode parent, ZarrRootNode root) {
-        super(zarrPath, parent, root, ZarrNodeType.CHUNK);
-        this.byteSize = byteSize;
+    public ZarrChunkNode(String[] zarrPath, ZarrNode parent, ZarrFactory factory) {
+        super(zarrPath, parent, factory, ZarrNodeType.CHUNK);
+    }
+
+    public ZarrChunkNode(String[] zarrPath, ZarrNode parent, ZarrFactory factory, long byteSize_in) {
+        super(zarrPath, parent, factory, ZarrNodeType.CHUNK);
+        this.byteSize = byteSize_in;
     }
 
     public long getByteSize() {

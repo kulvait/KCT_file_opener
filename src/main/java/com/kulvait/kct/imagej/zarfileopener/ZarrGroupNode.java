@@ -9,11 +9,21 @@
 
 package com.kulvait.kct.imagej.zarfileopener;
 
+import dev.zarr.zarrjava.core.Group;
+
 import java.util.ArrayList;
 import java.util.List;
 
 public class ZarrGroupNode extends ZarrNode {
-    public ZarrGroupNode(String[] zarrPath, ZarrNode parent, ZarrRootNode root) {
-        super(zarrPath, parent, root, ZarrNodeType.GROUP);
+    private Group zarrLibGroup = null;
+
+
+    public ZarrGroupNode(String[] zarrPath, ZarrNode parent, ZarrFactory factory) {
+        super(zarrPath, parent, factory, ZarrNodeType.GROUP);
+    }
+
+    public ZarrGroupNode(String[] zarrPath, ZarrNode parent, ZarrFactory factory, Group zarrLibGroup_in) {
+        super(zarrPath, parent, factory, ZarrNodeType.GROUP);
+        this.zarrLibGroup = zarrLibGroup_in;
     }
 }

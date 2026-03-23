@@ -56,7 +56,7 @@ public class ZarFileOpener implements PlugIn {
 
     static private String directory;
     private File file;
-    private ZarOpenerAccessory zarAccessory;
+    private ZarOpenerAccessory zarAccessory = null;
 
     public void run(String arg) {
 
@@ -144,114 +144,38 @@ public class ZarFileOpener implements PlugIn {
         return true;
     }
 
-    private boolean isZipFile(Path path) {
-        if (!Files.isRegularFile(path)) {
-            return false;
-        }
-        try (InputStream in = Files.newInputStream(path)) {
-            byte[] signature = new byte[4];
-            if (in.read(signature) == 4) {
-                // ZIP files start with "PK\003\004"
-                return signature[0] == 'P' && signature[1] == 'K';
-            }
-        } catch (IOException e) {
-            System.out.println("Cannot read file signature: " + e.getMessage());
-        }
-        return false;
-    }
-    /*
-    private boolean isZarrStore(Path path) {
-      // Basic heuristic: check for .zarray or .zgroup metadata files
-      if (Files.isDirectory(path)) {
-        return Files.exists(path.resolve(".zarray")) || Files.exists(path.resolve(".zgroup"));
-      } else if (isZipFile(path)) {
-        try {
-            ReadOnlyZipStore zipStore = new ReadOnlyZipStore(path);
-            return zipStore.exists(".zarray") || zipStore.exists(".zgroup");
-        } catch (IOException e) {
-            System.out.println("Error reading ZIP store: " + e.getMessage());
-        }
-      }
-      return false;
-    }
-    */
-
-    private boolean isZarrArray(StoreHandle store, String path) {
-        try {
-            Array.open(store.resolve(path));
-            return true;
-        } catch (Exception e) {
-            System.out.println("Error checking for Zarr array: " + path + e.getMessage());
-            return false;
-        }
-    }
-
-    private void inspectZarrStore(Path path) {
-        try {
-            StoreHandle store;
-            boolean isZip = isZipFile(path);
-            if (isZip) {
-                System.out.println("Opening ZIP store: " + path);
-                store = new ReadOnlyZipStore(path).resolve(); // root handle
-            } else {
-                System.out.println("Opening folder store: " + path);
-                store = new StoreHandle(new FilesystemStore(path));
-            }
-            ZarrRootNode root = new ZarrRootNode(store);
-            root.createZarrTree(-1, false, false); // depth -1 for full tree, no need to read metadata here
-            System.out.println("Store contents:");
-            List<String> children = new ArrayList<>();
-            String[] childArray = store.listChildren().toArray(String[]::new);
-//First print contents and check if they are Zarr arrays, then print all children again for comparison
-
-            for (String child : childArray) {
-                System.out.println("  " + child);
-            }
-            System.out.println("Checking which children are Zarr arrays...");
-            for (String child : childArray) {
-                if (isZarrArray(store, child)) {
-                    System.out.println("  " + child + " (Zarr array)");
-                    Array array = Array.open(store.resolve(child));
-                    ArrayMetadata meta = array.metadata();
-                    System.out.println("Detected Zarr array!");
-                    System.out.println("Shape: " + Arrays.toString(meta.shape));
-                    System.out.println("Chunk shape: " + Arrays.toString(meta.chunkShape()));
-                    System.out.println("Data type: " + meta.dataType());
-                    children.add(child);
-                } else {
-                    System.out.println(" " + child + " (not a Zarr array)");
-                }
-            }
-
-        } catch (Exception e) {
-            System.out.println("Failed to inspect Zarr store: " + e.getMessage());
-        }
-    }
-
     private void openZar(String[] path, boolean useVirtualStack) throws IOException {
         if (path == null) {
             logger.log(Level.WARNING, "Path is null, defaulting to root");
             path = new String[0];
         }
         String zarrPath = "/" + String.join("/", path);
-        ZarFileInfo zarInf = new ZarFileInfo(file);
+        ZarFileInfo zarInf;
+        //Test if the object was created in ZarOpenerAccessory to reuse resources
+        if (zarAccessory != null) {
+            zarInf = zarAccessory.getSelectedFileInfo();
+            File zarFile = zarInf.getFile();
+            if (!zarFile.equals(file)) {
+                zarInf = new ZarFileInfo(file);
+            }
+        } else {
+            zarInf = new ZarFileInfo(file);
+        }
         ImagePlus img;
         if (zarInf.isValidZarr()) {
             System.out.println("File is a valid Zarr store, inspecting contents...");
-            ZarrRootNode root = zarInf.getRootNode();
-            root.createZarrTree(-1, false, false); // depth -1 for full
-            if (root.isArray(path)) {
+            ZarrNode node = zarInf.getRootNode().getDescendant(path);
+            if (node != null && node.getType() == ZarrNodeType.ARRAY) {
                 System.out.println("Path " + path + " is a Zarr array, opening...");
-                ZarrArrayNode arrayNode = (ZarrArrayNode) root.getDescendant(path);
+                ZarrArrayNode arrayNode = (ZarrArrayNode) node;
                 long[] shape = arrayNode.getShape();
                 int[] chunkShape = arrayNode.getChunkShape();
                 DataType dtype = arrayNode.getDataType();
                 if (shape.length > 3) {
                     String msg = String.format(
-                            "Array at path %s has shape %s, which has more than 3 dimensions, cannot open as image.",
+                            "Array at path %s has shape %s, which has more than 3 dimensions!",
                             "/" + "".join("/", path), Arrays.toString(shape));
                     logger.log(Level.SEVERE, msg);
-                    return;
                 }
                 ZarVirtualStack vstack = new ZarVirtualStack(zarInf, path);
                 int frameCount = vstack.getFrameCount();

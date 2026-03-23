@@ -41,7 +41,8 @@ public class ZarFileInfo {
     private static final Logger logger = Logger.getLogger(ZarFileInfo.class.getName());
     private File f;
     private boolean validZarr = true;
-    private ZarrRootNode rootNode = null;
+    private ZarrFactory factory = null;
+    private ZarrNode rootNode = null;
 
     private boolean checkIfZip(Path path) {
         try (FileChannel fileChannel = FileChannel.open(path)) {
@@ -136,7 +137,8 @@ public class ZarFileInfo {
 
         if (validZarr) {
             try {
-                rootNode = new ZarrRootNode(store);
+                factory = new ZarrFactory(store);
+                rootNode = factory.getRootNode();
             } catch (Exception e) {
                 logger.log(Level.WARNING, "Error reading Zarr metadata: " + e.getMessage(), e);
                 validZarr = false;
@@ -144,15 +146,15 @@ public class ZarFileInfo {
         }
     }
 
-    public ZarrRootNode getRoot() {
-        return rootNode;
+    public ZarrFactory getFactory() {
+        return factory;
     }
 
     public boolean isValidZarr() {
         return validZarr;
     }
 
-    public ZarrRootNode getRootNode() {
+    public ZarrNode getRootNode() {
         return rootNode;
     }
 
@@ -160,15 +162,14 @@ public class ZarFileInfo {
         if (rootNode == null) {
             return false;
         }
-        return rootNode.isZip();
+        return factory.isZip();
     }
 
     public boolean isTopLevelArray() {
         if (rootNode == null) {
             return false;
         }
-        return rootNode.isArray();
-
+        return rootNode.getType() == ZarrNodeType.ARRAY;
     }
 
     private void populateGroupContent(ZarrNode node, DefaultMutableTreeNode jTreeNode) {

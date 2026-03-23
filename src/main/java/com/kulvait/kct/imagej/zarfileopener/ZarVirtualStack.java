@@ -59,8 +59,9 @@ public class ZarVirtualStack extends ImageStack {
         if (!inf.isValidZarr()) {
             throw new RuntimeException(String.format("File %s is not valid Zarr!", f.getName()));
         }
-        ZarrRootNode root = zarInf.getRootNode();
-        if (!root.isArray(path)) {
+        ZarrFactory factory = zarInf.getFactory();
+        ZarrNode root = zarInf.getRootNode();
+        if (!factory.isArray(path)) {
             throw new RuntimeException(String.format("Path %s is not a Zarr array!", String.join("/", path)));
         }
         String msg = String.format("Opening Zarr array %s/%s", f.getName(), String.join("/", path));
@@ -185,7 +186,7 @@ public class ZarVirtualStack extends ImageStack {
         for (int i = 0; i < pixelArray.length; i++) {
             pixelArray[i] = slice.getFloat(i);
         }
-        diffTime = System.currentTimeMillis() - startTime;
+        long diffTime = System.currentTimeMillis() - startTime;
         logger.log(Level.INFO, String.format("Time to read slice %d/%d: %d ms", n - 1, dimz, diffTime));
         return pixelArray;
     }

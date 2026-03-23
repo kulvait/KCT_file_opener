@@ -44,6 +44,7 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
     private ZarrNode selectedNode = null;
 
     File selectedFile = null;
+    ZarFileInfo selectedFileInfo = null;
 
     JLabel nameInfo;
     JLabel typeInfo;
@@ -211,6 +212,14 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
         return selectedNode.getZarrPath();
     }
 
+    public File getSelectedFile() {
+        return selectedFile;
+    }
+
+    public ZarFileInfo getSelectedFileInfo() {
+        return selectedFileInfo;
+    }
+
     public boolean isBoxSelected() {
         return virtualCheckBox.isSelected();
     }
@@ -222,6 +231,7 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
         // If the directory changed, don't show a preview
         if (JFileChooser.DIRECTORY_CHANGED_PROPERTY.equals(prop)) {
             selectedFile = null;
+            selectedFileInfo = null;
             nameInfo.setText("N/A");
             this.setVisible(false);
             update = true;
@@ -247,23 +257,23 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
     }
 
     public void updateInfo(File f) {
-        ZarFileInfo zarInf = new ZarFileInfo(f);
-        if (zarInf.isValidZarr()) {
+        selectedFileInfo = new ZarFileInfo(f);
+        if (selectedFileInfo.isValidZarr()) {
             nameInfo.setVisible(true);
             typeInfo.setVisible(true);
             //virtualCheckBox.setVisible(true);
-            if (zarInf.isZipZarr()) {
+            if (selectedFileInfo.isZipZarr()) {
                 nameInfo.setText(String.format("Zarr zip container"));
             } else {
                 nameInfo.setText(String.format("Zarr folder"));
             }
-            if (zarInf.isTopLevelArray()) {
+            if (selectedFileInfo.isTopLevelArray()) {
                 typeInfo.setText(String.format("TL array"));
             } else {
                 typeInfo.setText(String.format("Group"));
                 //Populate Jtree with group content
                 //DefaultMutableTreeNode root = new DefaultMutableTreeNode("/");
-                DefaultMutableTreeNode jTreeRoot = zarInf.getJTreeRootNode();
+                DefaultMutableTreeNode jTreeRoot = selectedFileInfo.getJTreeRootNode();
                 DefaultTreeModel model = new DefaultTreeModel(jTreeRoot);
                 arrayTree.setModel(model);
                 arrayTree.setRootVisible(false);

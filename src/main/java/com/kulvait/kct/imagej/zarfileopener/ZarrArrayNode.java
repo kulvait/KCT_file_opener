@@ -33,41 +33,67 @@ public class ZarrArrayNode extends ZarrNode {
     private DataType dtype;
     private boolean valid = true;
     private String errorMessage;
-    private Array array = null;
-    private ArrayMetadata metadata = null;
-    private boolean isArrayLoaded = false;
+    private Array zarrLibArray = null;
+    private ArrayMetadata zarLibMetadata = null;
+    private boolean areZarrLibObjectsInitialized = false;
 
-    private void initArray() {
-        if (isArrayLoaded) {
+    private void initZarrLibObjects() {
+        if (areZarrLibObjectsInitialized) {
             return;
         }
-        array = root.getArray(zarrPath);
-        if (array != null)
-            metadata = array.metadata();
-        if (metadata != null) {
-            shape = metadata.shape;
-            dtype = metadata.dataType();
-            chunkShape = metadata.chunkShape();
+        zarrLibArray = factory.getArray(zarrPath);
+        if (zarrLibArray != null)
+            zarLibMetadata = zarrLibArray.metadata();
+        if (zarLibMetadata != null) {
+            shape = zarLibMetadata.shape;
+            dtype = zarLibMetadata.dataType();
+            chunkShape = zarLibMetadata.chunkShape();
         }
-        isArrayLoaded = true;
+        areZarrLibObjectsInitialized = true;
     }
 
-    public ZarrArrayNode(String[] zarrPath, ZarrNode parent, ZarrRootNode root) {
-        super(zarrPath, parent, root, ZarrNodeType.ARRAY);
+    public ZarrArrayNode(String[] zarrPath, ZarrNode parent, ZarrFactory factory_in) {
+        super(zarrPath, parent, factory_in, ZarrNodeType.ARRAY);
+    }
+
+    // When caller has dev.zarr.zarrjava.core.Array object ready, we can use it to initialize the ZarrArrayNode directly.
+    public ZarrArrayNode(String[] zarrPath, ZarrNode parent, ZarrFactory factory_in, Array zarrLibArray_in) {
+        super(zarrPath, parent, factory_in, ZarrNodeType.ARRAY);
+        this.zarrLibArray = zarrLibArray_in;
+        this.zarLibMetadata = zarrLibArray.metadata();
+        if (zarLibMetadata != null) {
+            shape = zarLibMetadata.shape;
+            dtype = zarLibMetadata.dataType();
+            chunkShape = zarLibMetadata.chunkShape();
+        }
+        areZarrLibObjectsInitialized = true;
+    }
+
+    // When dev.zarr.zarrjava.core.Array and dev.zarr.zarrjava.core.ArrayMetadata objects are ready, we can use them to initialize the ZarrArrayNode directly.	
+    public ZarrArrayNode(String[] zarrPath, ZarrNode parent, ZarrFactory factory_in, Array zarrLibArray_in, ArrayMetadata zarLibMetadata_in) {
+        super(zarrPath, parent, factory_in, ZarrNodeType.ARRAY);
+        this.zarrLibArray = zarrLibArray_in;
+        this.zarLibMetadata = zarLibMetadata_in;
+        if (zarLibMetadata != null) {
+            shape = zarLibMetadata.shape;
+            dtype = zarLibMetadata.dataType();
+            chunkShape = zarLibMetadata.chunkShape();
+        }
+        areZarrLibObjectsInitialized = true;
     }
 
     public long[] getShape() {
-        initArray();
+        initZarrLibObjects();
         return shape;
     }
 
     public int[] getChunkShape() {
-        initArray();
+        initZarrLibObjects();
         return chunkShape;
     }
 
     public DataType getDataType() {
-        initArray();
+        initZarrLibObjects();
         return dtype;
     }
 
@@ -85,12 +111,12 @@ public class ZarrArrayNode extends ZarrNode {
     }
 
     public ucar.ma2.Array readArray(final long[] offset, final long[] shape) {
-        initArray();
+        initZarrLibObjects();
         try {
-            if (array == null) {
+            if (zarrLibArray == null) {
                 throw new RuntimeException("Array is not initialized");
             }
-            return array.read(offset, shape);
+            return zarrLibArray.read(offset, shape);
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Error reading array data: " + e.getMessage(), e);
             return null;
@@ -140,7 +166,7 @@ public class ZarrArrayNode extends ZarrNode {
                     // We test if the name is .zarray or .zgroup or zarr.json, which are reserved names in Zarr to build AnnotationNodes
                     if (includeAnnotationNodes) {
                         System.out.printf("%s is an annotation node%n", childPath);
-                        ZarrAnnotationNode annotationNode = new ZarrAnnotationNode(childZarrPath, this, root);
+                        ZarrAnnotationNode annotationNode = new ZarrAnnotationNode(childZarrPath, this, factory);
                         children.add(annotationNode);
                     } else {
                         String msg = String.format("%s is an annotation node, but annotation nodes are not included%n",
