@@ -16,6 +16,9 @@ import java.io.RandomAccessFile;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+// Logging
+import java.util.logging.Logger;
+import java.util.logging.Level;
 
 import ij.ImageStack;
 import ij.process.FloatProcessor;
@@ -30,17 +33,17 @@ import dev.zarr.zarrjava.core.Array;
 // 32=float, see https://forum.image.sc/t/how-to-obtain-an-integer-image/1401
 
 public class ZarVirtualStack extends ImageStack {
-
+    protected final Logger logger = Logger.getLogger(ZarrNode.class.getName());
     File f;
     ZarFileInfo zarInf;
     String[] path;
     ZarrArrayNode arrayNode;
     int dimx, dimy, dimz;
-    int dimImg;
+    int frameSize;
     DataType dtype;
     int[] chunkShape;
     long[] shape;
-    long[] frameShape;
+    long[] frameShape; // Shape of array to read into buffer
     long[] multiblockSize;// For 4D and higher dimensional arrays we need to compute size of multiblocks to compute offset
     float[] pixelArray;
 
@@ -98,24 +101,18 @@ public class ZarVirtualStack extends ImageStack {
             if (i == shape.length - 1) {
 // x dim
                 frameShape[i] = shape[i];
-            }
-            if (i == shape.length - 2) {
+            } else if (i == shape.length - 2) {
 // y dim
                 frameShape[i] = shape[i];
             } else {
                 frameShape[i] = 1;
             }
         }
-        dimImg = dimx * dimy;
-        pixelArray = new float[dimImg];
+        frameSize = dimx * dimy;
+        pixelArray = new float[frameSize];
 
-        // Supports fast access, if from undefined dimension these are ones
-        //dimx = (int) inf.getDimx();
-        //dimy = (int) inf.getDimy();
-        //dimz = (int) inf.getDimz();
-        //dimImg = dimx * dimy;
         //typ = inf.getElementType();
-        //pixelArray = new float[dimImg];
+        //pixelArray = new float[frameSize];
     }
 
     /**
@@ -153,46 +150,44 @@ public class ZarVirtualStack extends ImageStack {
     // Theoretically I can derive it from ImagePlus with given offset
     // 1 based n
     public ImageProcessor getProcessor(int n) {
-        FloatProcessor fp = new FloatProcessor(dimx, dimy);
         getPixels(n);
-        int index;
-        for (int y = 0; y != dimy; y++) {
-            for (int x = 0; x != dimx; x++) {
-                index = y * dimx + x;
-                fp.setf(x, y, pixelArray[index]);
-            }
-        }
+        FloatProcessor fp = new FloatProcessor(dimx, dimy, pixelArray);
         return fp;
+
     }
 
     public Object getPixels(int n) {
-        if (n > dimz) {
+        if (pixelArray == null || pixelArray.length != frameSize)
+            pixelArray = new float[frameSize];
+        long startTime = System.currentTimeMillis();
+        int frameIndex = n - 1;// ImageJ is 1 based, so we need to subtract 1
+        if (frameIndex < 0 || frameIndex >= dimz) {
             throw new RuntimeException(String.format(
                     "Illegal acces to the slice %d/%d", n - 1, dimz));
         }
         long[] offset = new long[frameShape.length];
         if (frameShape.length <= 3) {
             // For 1D, 2D and 3D arrays we can directly calculate
-            offset[0] = n;//z dim is the first dimension in numpy notation, so it is the last dimension in ImageJ notation
+            offset[0] = frameIndex;
         } else {
             // Computing multiindex is difficult so we precompute sizes of multiblocks
-            long frameIndex = n;
+            long extendedIndex = frameIndex;
             for (int i = 0; i < frameShape.length - 2; i++) {
-                offset[i] = frameIndex / multiblockSize[i];
-                frameIndex = frameIndex % multiblockSize[i];
+                offset[i] = extendedIndex / multiblockSize[i];
+                extendedIndex = extendedIndex % multiblockSize[i];
             }
         }
         ucar.ma2.Array slice = arrayNode.readArray(offset, frameShape);
-
+        if (slice == null) {
+            throw new RuntimeException(String.format(
+                    "Can not read slice %d/%d", n - 1, dimz));
+        }
         for (int i = 0; i < pixelArray.length; i++) {
             pixelArray[i] = slice.getFloat(i);
         }
-        if (pixelArray != null) {
-            return pixelArray;
-        } else {
-            throw new RuntimeException(String.format(
-                    "Can not map buffer of the slice %d/%d", n - 1, dimz));
-        }
+        diffTime = System.currentTimeMillis() - startTime;
+        logger.log(Level.INFO, String.format("Time to read slice %d/%d: %d ms", n - 1, dimz, diffTime));
+        return pixelArray;
     }
 
     /**

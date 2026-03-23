@@ -34,6 +34,7 @@ import com.kulvait.kct.imagej.denfileopener.DenFileInfo;
 import dev.zarr.zarrjava.core.DataType;
 // Logger
 import java.util.logging.Logger;
+import java.util.logging.Level;
 
 public class ZarOpenerAccessory extends JComponent implements PropertyChangeListener {
     public static final Logger logger = Logger.getLogger(ZarOpenerAccessory.class.getName());
@@ -207,7 +208,6 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
         if (selectedNode == null) {
             return null;
         }
-
         return selectedNode.getZarrPath();
     }
 

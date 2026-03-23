@@ -104,7 +104,7 @@ public class ZarFileOpener implements PlugIn {
                     JFileChooser fc = new JFileChooser();
                     fc.setDialogTitle("Open Zarr file...");
                     //This might crash accessory not implemented!
-                    //fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+                    fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
                     zarAccessory = new ZarOpenerAccessory(fc);
                     fc.setAccessory(zarAccessory);
                     fc.setMultiSelectionEnabled(false);
@@ -229,6 +229,10 @@ public class ZarFileOpener implements PlugIn {
     }
 
     private void openZar(String[] path, boolean useVirtualStack) throws IOException {
+        if (path == null) {
+            logger.log(Level.WARNING, "Path is null, defaulting to root");
+            path = new String[0];
+        }
         String zarrPath = "/" + String.join("/", path);
         ZarFileInfo zarInf = new ZarFileInfo(file);
         ImagePlus img;
