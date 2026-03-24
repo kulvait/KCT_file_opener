@@ -181,7 +181,12 @@ public class ZarrFactory {
             Store.ListableStore listableStore = (Store.ListableStore) store;
             String[] zarrPath = new String[0]; // Start listing from the root
             try (Stream<String[]> allKeysStream = listableStore.list(zarrPath)) {
+                long startTime = System.currentTimeMillis();
                 allKeys = allKeysStream.collect(Collectors.toList());
+                long duration = System.currentTimeMillis() - startTime;
+                String msg = String.format("Listed all %d keys in store %s in %d ms.", allKeys.size(), getStorePath(),
+                        duration);
+                logger.log(Level.INFO, msg);
             } catch (Exception e) {
                 logger.log(Level.SEVERE, "Error listing children for strore: " + getStorePath() + ".", e);
             }
