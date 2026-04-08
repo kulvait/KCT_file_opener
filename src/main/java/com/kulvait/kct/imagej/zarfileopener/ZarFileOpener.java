@@ -96,13 +96,47 @@ public class ZarFileOpener implements PlugIn {
         }
     }
 
+    private boolean isDENFileOrZarrStore(File file) {
+        DenFileInfo inf = new DenFileInfo(file);
+        if (inf.isValidDEN()) {
+            return true;
+        }
+//Zarr store check is more expensive, so we only do it if the DEN check fails
+        ZarFileInfo zarInf;
+        //Test if the object was created in ZarOpenerAccessory to reuse resources
+        if (zarAccessory != null) {
+            zarInf = zarAccessory.getSelectedZarrFileInfo();
+            File zarFile = zarInf.getFile();
+            if (!zarFile.equals(file)) {
+                zarInf = new ZarFileInfo(file);
+            }
+        } else {
+            zarInf = new ZarFileInfo(file);
+        }
+        return zarInf.isValidZarr();
+    }
+
     public boolean openFilesDialog() {
         try {
             EventQueue.invokeAndWait(new Runnable() {
 
                 public void run() {
-                    JFileChooser fc = new JFileChooser();
-                    fc.setDialogTitle("Open Zarr file...");
+                    JFileChooser fc = new JFileChooser() {
+                        @Override
+                        public void approveSelection() {
+                            File selectedFile = getSelectedFile();
+                            if (isDENFileOrZarrStore(selectedFile)) {
+                                // If the selected file is a DEN file or a Zarr store, approve the selection
+                                super.approveSelection();
+                                return;
+                            }
+                            if (selectedFile.isDirectory()) {
+                                setCurrentDirectory(selectedFile);
+                                return;
+                            }
+                        }
+                    };
+                    fc.setDialogTitle("Open Zarr/DEN file ...");
                     //This might crash accessory not implemented!
                     fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
                     zarAccessory = new ZarOpenerAccessory(fc);
@@ -153,7 +187,7 @@ public class ZarFileOpener implements PlugIn {
         ZarFileInfo zarInf;
         //Test if the object was created in ZarOpenerAccessory to reuse resources
         if (zarAccessory != null) {
-            zarInf = zarAccessory.getSelectedFileInfo();
+            zarInf = zarAccessory.getSelectedZarrFileInfo();
             File zarFile = zarInf.getFile();
             if (!zarFile.equals(file)) {
                 zarInf = new ZarFileInfo(file);

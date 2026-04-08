@@ -82,7 +82,7 @@
   <dependency>
    <groupId>com.github.kulvait</groupId>
    <artifactId>zarr-java</artifactId>
-   <version>zip-SNAPSHOT</version> <!-- branch name -->
+   <version>zip-clean-SNAPSHOT</version> <!-- branch name -->
   </dependency>
  </dependencies>
  <repositories>

@@ -23,9 +23,20 @@ import java.util.logging.Logger;
 import java.util.logging.Level;
 import java.util.stream.Stream;
 import java.util.stream.Collectors;
+import java.util.stream.Stream.Builder;
+import java.io.IOException;
+import java.io.File;
 // Java NIO imports for file handling
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.nio.file.FileVisitResult;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.FileVisitor;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
+import java.nio.file.FileSystemException;
+import java.nio.file.FileVisitOption;
 // Zarr Java library imports
 import dev.zarr.zarrjava.ZarrException;
 import dev.zarr.zarrjava.core.Node;
@@ -176,17 +187,65 @@ public class ZarrFactory {
         if (allKeysListCreated) {
             return; // Already created, no need to list again
         }
+        String[] zarrPath = new String[0]; // Start listing from the root
         Store store = handle.store;
-        if (store instanceof Store.ListableStore) {
+        if (store instanceof FilesystemStore) {
+//Implement faster transition than default one
+            allKeys = new ArrayList<>();
+            Path rootPath = Path.of(this.storePath);
+//Avoid list() which lists all chunks in c directories and instead omit them
+            try {
+                // Walk the directory tree using walkFileTree
+                Builder<String[]> builder = Stream.builder();  // Create a Stream.Builder to collect results
+                Files.walkFileTree(rootPath, new SimpleFileVisitor<Path>() {
+                    @Override
+                    public FileVisitResult visitFile(Path path, BasicFileAttributes attrs) throws IOException {
+                        // Only process regular files avoids Files::isRegularFile additional IO calls
+                        if (attrs.isRegularFile()) {
+                            String[] keys = rootPath.relativize(path).toString().split(File.separator);
+                            builder.add(keys);  // Add the keys to the stream builder
+                        }
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    /*
+                    @Override
+                    public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
+                        // Called when a file could not be visited
+                        String msg = "Failed to visit file: " + file + " due to: " + exc.getMessage();
+                        logger.log(Level.WARNING, msg, exc);
+                        return FileVisitResult.CONTINUE;
+                    }
+                    */
+                    @Override
+                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+
+                        // Skip directories named "c"
+                        if (dir.getFileName() != null && dir.getFileName().toString().equals("c")) {
+                            String[] keys = rootPath.relativize(dir).toString().split(File.separator);
+                            builder.add(keys);  // Add the keys to the stream builder
+                            return FileVisitResult.SKIP_SUBTREE;
+                        }
+                        return FileVisitResult.CONTINUE;
+
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+                allKeys = builder.build().collect(Collectors.toList());
+                // Alternative way to convert paths to key paths without using split, which can be more robust across different platforms:
+
+            } catch (IOException e) {
+                logger.log(Level.SEVERE, "Error walking file tree for store: " + getStorePath() + ".", e);
+            }
+
+        } else if (store instanceof Store.ListableStore) {
             Store.ListableStore listableStore = (Store.ListableStore) store;
-            String[] zarrPath = new String[0]; // Start listing from the root
             try (Stream<String[]> allKeysStream = listableStore.list(zarrPath)) {
-                long startTime = System.currentTimeMillis();
                 allKeys = allKeysStream.collect(Collectors.toList());
-                long duration = System.currentTimeMillis() - startTime;
-                String msg = String.format("Listed all %d keys in store %s in %d ms.", allKeys.size(), getStorePath(),
-                        duration);
-                logger.log(Level.INFO, msg);
             } catch (Exception e) {
                 logger.log(Level.SEVERE, "Error listing children for strore: " + getStorePath() + ".", e);
             }
@@ -203,7 +262,6 @@ public class ZarrFactory {
         if (allKeysDirectoryCreated) {
             return; // Already created, no need to build again
         }
-        logger.info("Building directory tree for Zarr store: " + getStorePath());
         long startTime = System.currentTimeMillis();
         listAllKeys(); // Ensure all keys are listed before building the tree
         directoryTree = new DirectoryNode(null); // Root of the directory tree
@@ -211,7 +269,16 @@ public class ZarrFactory {
             directoryTree.addChild(keyPath); // Add each key path to the directory tree	
         }
         long endTime = System.currentTimeMillis();
-        logger.info("Directory tree built in " + (endTime - startTime) + " ms for " + allKeys.size() + " keys");
+        /*
+        for (String[] keyPath : allKeys) {
+            String fullPath = getFullPath(keyPath);
+            logger.fine("Added key to directory tree: " + fullPath);
+        }*/
+        int keyCount = allKeys.size();
+        long duration = endTime - startTime;
+        String msg = String.format("Listed all %d keys in store %s in %dms to build directoryTree.", keyCount,
+                getStorePath(), duration);
+        logger.log(Level.INFO, msg);
         allKeysDirectoryCreated = true; // Mark that the directory tree has been built
     }
 

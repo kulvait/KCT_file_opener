@@ -44,7 +44,7 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
     private ZarrNode selectedNode = null;
 
     File selectedFile = null;
-    ZarFileInfo selectedFileInfo = null;
+    ZarFileInfo selectedZarrFileInfo = null;
 
     JLabel nameInfo;
     JLabel typeInfo;
@@ -216,8 +216,8 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
         return selectedFile;
     }
 
-    public ZarFileInfo getSelectedFileInfo() {
-        return selectedFileInfo;
+    public ZarFileInfo getSelectedZarrFileInfo() {
+        return selectedZarrFileInfo;
     }
 
     public boolean isBoxSelected() {
@@ -231,7 +231,7 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
         // If the directory changed, don't show a preview
         if (JFileChooser.DIRECTORY_CHANGED_PROPERTY.equals(prop)) {
             selectedFile = null;
-            selectedFileInfo = null;
+            selectedZarrFileInfo = null;
             nameInfo.setText("N/A");
             this.setVisible(false);
             update = true;
@@ -257,23 +257,23 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
     }
 
     public void updateInfo(File f) {
-        selectedFileInfo = new ZarFileInfo(f);
-        if (selectedFileInfo.isValidZarr()) {
+        selectedZarrFileInfo = new ZarFileInfo(f);
+        if (selectedZarrFileInfo.isValidZarr()) {
             nameInfo.setVisible(true);
             typeInfo.setVisible(true);
             //virtualCheckBox.setVisible(true);
-            if (selectedFileInfo.isZipZarr()) {
+            if (selectedZarrFileInfo.isZipZarr()) {
                 nameInfo.setText(String.format("Zarr zip container"));
             } else {
                 nameInfo.setText(String.format("Zarr folder"));
             }
-            if (selectedFileInfo.isTopLevelArray()) {
+            if (selectedZarrFileInfo.isTopLevelArray()) {
                 typeInfo.setText(String.format("TL array"));
             } else {
                 typeInfo.setText(String.format("Group"));
                 //Populate Jtree with group content
                 //DefaultMutableTreeNode root = new DefaultMutableTreeNode("/");
-                DefaultMutableTreeNode jTreeRoot = selectedFileInfo.getJTreeRootNode();
+                DefaultMutableTreeNode jTreeRoot = selectedZarrFileInfo.getJTreeRootNode();
                 DefaultTreeModel model = new DefaultTreeModel(jTreeRoot);
                 arrayTree.setModel(model);
                 arrayTree.setRootVisible(false);
