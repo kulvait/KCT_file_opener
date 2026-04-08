@@ -88,6 +88,7 @@ public class ZarFileOpener implements PlugIn {
                 path = zarAccessory.getSelectedZarrPath();
             } else {
                 file = new File(arg);
+                directory = file.getParent() + File.separator;
                 useVirtualStack = true;
             }
             openZar(path, useVirtualStack);
@@ -225,6 +226,10 @@ public class ZarFileOpener implements PlugIn {
                 String msg = String.format("Path %s in %s is not a Zarr array, cannot open as image.", "/" + "".join(
                         "/", path), file.getName());
                 logger.log(Level.SEVERE, msg);
+                openFilesDialog();
+                useVirtualStack = zarAccessory.isBoxSelected();
+                path = zarAccessory.getSelectedZarrPath();
+                openZar(path, useVirtualStack);
             }
         } else {
             DenFileInfo inf = new DenFileInfo(file);

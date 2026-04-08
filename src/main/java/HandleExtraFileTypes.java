@@ -478,6 +478,9 @@ public class HandleExtraFileTypes extends ImagePlus implements PlugIn {
         if (name.endsWith(".dat")) {
             return tryPlugIn("com.kulvait.kct.imagej.denfileopener.dat.DatFileOpener", path);
         }
+        if (name.endsWith(".zar") || name.endsWith(".zarr") || name.endsWith(".zip")) {
+            return tryPlugIn("com.kulvait.kct.imagej.zarfileopener.ZarFileOpener", path);
+        }
 
         return null;
     }
