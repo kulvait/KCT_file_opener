@@ -32,7 +32,7 @@ import javax.swing.tree.DefaultMutableTreeNode;
 // Zarr Java library imports
 import dev.zarr.zarrjava.core.Array;
 import dev.zarr.zarrjava.core.ArrayMetadata;
-import dev.zarr.zarrjava.store.ReadOnlyZipStore;
+import dev.zarr.zarrjava.store.ReadOnlyFilesystemZipStore;
 import dev.zarr.zarrjava.store.FilesystemStore;
 import dev.zarr.zarrjava.store.StoreHandle;
 import dev.zarr.zarrjava.ZarrException;
@@ -119,7 +119,7 @@ public class ZarFileInfo {
         try {
             if (isZip) {
                 System.out.println("Opening ZIP store: " + path);
-                store = new ReadOnlyZipStore(path).resolve(); // root handle
+                store = new ReadOnlyFilesystemZipStore(path).resolve(); // root handle
             } else if (isDirectory) {
                 System.out.println("Opening folder store: " + path);
                 store = new StoreHandle(new FilesystemStore(path));

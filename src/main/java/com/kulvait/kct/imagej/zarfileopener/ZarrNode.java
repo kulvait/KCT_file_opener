@@ -18,7 +18,7 @@ import java.io.IOException;
 import dev.zarr.zarrjava.core.Array;
 import dev.zarr.zarrjava.core.Group;
 import dev.zarr.zarrjava.core.ArrayMetadata;
-import dev.zarr.zarrjava.store.ReadOnlyZipStore;
+import dev.zarr.zarrjava.store.ReadOnlyFilesystemZipStore;
 import dev.zarr.zarrjava.store.FilesystemStore;
 import dev.zarr.zarrjava.store.StoreHandle;
 import dev.zarr.zarrjava.store.Store;

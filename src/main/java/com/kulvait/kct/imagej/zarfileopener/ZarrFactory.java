@@ -45,7 +45,7 @@ import dev.zarr.zarrjava.core.Group;
 import dev.zarr.zarrjava.core.ArrayMetadata;
 import dev.zarr.zarrjava.store.BufferedZipStore;
 import dev.zarr.zarrjava.store.FilesystemStore;
-import dev.zarr.zarrjava.store.ReadOnlyZipStore;
+import dev.zarr.zarrjava.store.ReadOnlyFilesystemZipStore;
 import dev.zarr.zarrjava.store.StoreHandle;
 import dev.zarr.zarrjava.store.Store;
 import dev.zarr.zarrjava.store.ZipStore;
@@ -81,7 +81,7 @@ public class ZarrFactory {
             this.storePath = null;
             this.storeURI = null;
         }
-        if (handle.store instanceof ReadOnlyZipStore || handle.store instanceof BufferedZipStore || handle.store instanceof ZipStore) {
+        if (handle.store instanceof ReadOnlyFilesystemZipStore || handle.store instanceof BufferedZipStore || handle.store instanceof ZipStore) {
             this.isZip = true;
         } else {
             this.isZip = false;
