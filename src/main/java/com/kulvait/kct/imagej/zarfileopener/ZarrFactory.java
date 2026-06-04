@@ -26,6 +26,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream.Builder;
 import java.io.IOException;
 import java.io.File;
+// This package
+import com.kulvait.kct.imagej.zarfileopener.JEPBridge;
 // Java NIO imports for file handling
 import java.nio.file.Path;
 import java.nio.file.Files;
@@ -42,6 +44,7 @@ import dev.zarr.zarrjava.ZarrException;
 import dev.zarr.zarrjava.core.Node;
 import dev.zarr.zarrjava.core.Array;
 import dev.zarr.zarrjava.core.Group;
+import dev.zarr.zarrjava.core.LenientMetadata;
 import dev.zarr.zarrjava.core.ArrayMetadata;
 import dev.zarr.zarrjava.store.BufferedZipStore;
 import dev.zarr.zarrjava.store.FilesystemStore;
@@ -53,6 +56,7 @@ import dev.zarr.zarrjava.store.ZipStore;
 
 public class ZarrFactory {
     StoreHandle handle;
+    private static JEPBridge jepBridge = null;
     private String storePath; // folder, zip, or URI
     private String storeURI; // optional, for remote
     private boolean isZip;
@@ -67,19 +71,27 @@ public class ZarrFactory {
     ZarrNode root = null; // The root node of the Zarr store, which can be either an array or a group
 
     public ZarrFactory(StoreHandle handle) {
-        System.out.println("Creating ZarrFactory with provided StoreHandle");
         this.handle = handle;
-        try {
-            Path storePathIN = handle.toPath();
+        if (handle.store instanceof ReadOnlyFilesystemZipStore) {
+            isZip = true;
+            ReadOnlyFilesystemZipStore h = (ReadOnlyFilesystemZipStore) handle.store;
+            Path storePathIN = h.getPath();
             this.storePath = storePathIN.toString();
-            System.out.println(
-                    "Creating ZarrFactory for Zarr store in " + this.storePath);
+            System.out.println("Creating ZarrFactory from ReadOnlyFilesystemZipStore %s".formatted(this.storePath));
             this.storeURI = null;
-        } catch (Exception e) {
-            System.out.println(
-                    "Creating ZarrFactory for Zarr store with non-path handle, using URI if available");
-            this.storePath = null;
-            this.storeURI = null;
+        } else {
+            try {
+                Path storePathIN = handle.toPath();
+                this.storePath = storePathIN.toString();
+                System.out.println(
+                        "Creating ZarrFactory for Zarr store in " + this.storePath);
+                this.storeURI = null;
+            } catch (Exception e) {
+                System.out.println(
+                        "Creating ZarrFactory for Zarr store with non-path handle, using URI if available");
+                this.storePath = null;
+                this.storeURI = null;
+            }
         }
         if (handle.store instanceof ReadOnlyFilesystemZipStore || handle.store instanceof BufferedZipStore || handle.store instanceof ZipStore) {
             this.isZip = true;
@@ -455,6 +467,15 @@ public class ZarrFactory {
                 return false; // Any non-root path cannot be an array if the root is a top-level array
             }
         }
+        ZarrNode node = this.root.getDescendant(path); // Ensure the node is loaded and cached in the directory tree, which can help with performance for subsequent calls
+        if (node == null) {
+            return false; // If the node does not exist, it's not an array
+        } else if (node instanceof ZarrArrayNode) {
+            return true; // If the node is a ZarrArrayNode, it's an array
+        } else {
+            return false; // If the node exists but is not a ZarrArrayNode, it's not an array
+        }
+        /*
         try {
             Node node = this.topLevelGroup.get(path);
             if (node instanceof Array) {
@@ -463,7 +484,7 @@ public class ZarrFactory {
             return false; // If it cannot be opened as an array, it's not an array
         } catch (Exception e) {
             return false; // If there is an error accessing the node, we cannot determine if it's an array, so we return false
-        }
+        }*/
         /*
         try {
             Array.open(handle.resolve(path));
@@ -474,12 +495,40 @@ public class ZarrFactory {
         */
     }
 
+    public LenientMetadata.ArrayInfo getArrayInfo(String[] path) {
+        try {
+            LenientMetadata.ArrayInfo info = LenientMetadata.openArray(handle.resolve(path));
+            return info;
+        } catch (Exception e) {
+            logger.log(Level.INFO, "Error opening node at path " + getFullPath(
+                    path) + " in store " + getStorePath() + ".", e);
+            logger.log(Level.INFO, e.getMessage(), e);
+            return null; // If there is an error accessing the node, we cannot get metadata, so we return null
+        }
+    }
+
+
+    public static synchronized JEPBridge getJEPBridge() {
+        if (jepBridge == null) {
+            //Start as ./ImageJ-linux64 -Dkct.python.env=/data/hereon/wp/group/laupy/share/mamba_env/minizarr
+            String envPath = System.getProperty(
+                    "kct.python.env",
+                    "/data/hereon/wp/group/laupy/share/mamba_env/minizarr"
+            );
+            jepBridge = JEPBridge.get(envPath);
+        }
+        return jepBridge;
+    }
+
     public ArrayMetadata getArrayMetadata(String[] path) {
         try {
             Array array = Array.open(handle.resolve(path));
             ArrayMetadata metadata = array.metadata();
             return metadata;
         } catch (Exception e) {
+            logger.log(Level.INFO, "Error opening array at path " + getFullPath(
+                    path) + " in store " + getStorePath() + ".", e);
+            logger.log(Level.INFO, e.getMessage(), e);
             return null;
         }
     }
@@ -488,6 +537,9 @@ public class ZarrFactory {
         try {
             return Array.open(handle.resolve(path));
         } catch (Exception e) {
+            logger.log(Level.INFO, "Error opening array at path " + getFullPath(
+                    path) + " in store " + getStorePath() + ".", e);
+            logger.log(Level.INFO, e.getMessage(), e);
             return null;
         }
     }

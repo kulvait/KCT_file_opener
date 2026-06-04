@@ -33,7 +33,7 @@ import dev.zarr.zarrjava.core.Array;
 // 32=float, see https://forum.image.sc/t/how-to-obtain-an-integer-image/1401
 
 public class ZarVirtualStack extends ImageStack {
-    protected final Logger logger = Logger.getLogger(ZarrNode.class.getName());
+    protected final Logger logger = Logger.getLogger(ZarVirtualStack.class.getName());
     File f;
     ZarFileInfo zarInf;
     String[] path;
@@ -56,15 +56,20 @@ public class ZarVirtualStack extends ImageStack {
         this.f = inf.getFile();
         this.zarInf = inf;
         this.path = path;
-        if (!inf.isValidZarr()) {
+        String zarrPath = String.join("/", path);
+        boolean isValidZarr = inf.isValidZarr();
+        if (!isValidZarr) {
+            logger.log(Level.SEVERE, String.format("File %s is not valid Zarr!", f.getName()));
             throw new RuntimeException(String.format("File %s is not valid Zarr!", f.getName()));
         }
         ZarrFactory factory = zarInf.getFactory();
         ZarrNode root = zarInf.getRootNode();
         if (!factory.isArray(path)) {
+            logger.log(Level.SEVERE, String.format("Path %s is not a Zarr array!", String.join("/", path)));
             throw new RuntimeException(String.format("Path %s is not a Zarr array!", String.join("/", path)));
         }
-        String msg = String.format("Opening Zarr array %s/%s", f.getName(), String.join("/", path));
+        logger.log(Level.INFO, String.format("Creating ZarVirtualStack for array %s:%s", f.getName(),
+                zarrPath));
         arrayNode = (ZarrArrayNode) root.getDescendant(path);
         shape = arrayNode.getShape();
         chunkShape = arrayNode.getChunkShape();

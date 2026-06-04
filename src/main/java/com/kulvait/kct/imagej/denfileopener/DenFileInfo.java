@@ -17,11 +17,17 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Arrays;
 
+// Logging imports
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 public class DenFileInfo {
     // The DEX format is inspired by DEN
     // It is format to store n-dimensional arrays
     // In 2-byte headers is encoded the following HEADER1(YMAJOR,TYPE)
     // HEADER2(DIM,ELMLEN)
+
+    private static final Logger logger = Logger.getLogger(DenFileInfo.class.getName());
 
     final int DIM_EXTHEADER1_MASK = 0xf;
     final long ELMLEN_EXTHEADER1_MASK = 0xffff0000L;
@@ -55,7 +61,7 @@ public class DenFileInfo {
         dim = new long[16];
         Arrays.fill(dim, 1);
         if (byteSize < 6) {
-            System.out.printf("Invalid DEN: byteSize < 6");
+            logger.log(Level.INFO, "File %s is not DEN because of byteSize < 6", f.getName());
             validDEN = false;
             return;
         }
@@ -132,7 +138,7 @@ public class DenFileInfo {
 
             if (!extendedDEN) {
                 if ((byteSize - dataByteOffset) % elementCount != 0) {
-                    System.out.printf("File %s is not DEN because of alignment of data%n", f.getName());
+                    logger.log(Level.INFO, "File %s is not DEN because of alignment of data", f.getName());
                     validDEN = false;
                     return;
                 }
@@ -144,7 +150,7 @@ public class DenFileInfo {
                 } else if (elementSize == 8) {
                     elementType = DenDataType.FLOAT64;
                 } else {
-                    System.out.printf("Invalid legacy DEN: elementSize=%d", elementSize);
+                    logger.log(Level.INFO, "Invalid legacy DEN: elementSize=%d", elementSize);
                     validDEN = false;
                     return;
                 }
@@ -159,7 +165,8 @@ public class DenFileInfo {
                 validDEN = false;
             }
         } catch (IOException e) {
-            System.out.printf("Invalid DEN: IOException");
+            logger.log(Level.INFO, String.format("File %s is not DEN because of IOException: %s", f.getName(),
+                    e.getMessage()));
             validDEN = false;
         }
     }

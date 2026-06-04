@@ -198,10 +198,9 @@ public class ZarFileOpener implements PlugIn {
         }
         ImagePlus img;
         if (zarInf.isValidZarr()) {
-            System.out.println("File is a valid Zarr store, inspecting contents...");
             ZarrNode node = zarInf.getRootNode().getDescendant(path);
             if (node != null && node.getType() == ZarrNodeType.ARRAY) {
-                System.out.println("Path " + path + " is a Zarr array, opening...");
+                logger.log(Level.INFO, String.format("Opening Zarr array %s:%s", file.getName(), zarrPath));
                 ZarrArrayNode arrayNode = (ZarrArrayNode) node;
                 long[] shape = arrayNode.getShape();
                 int[] chunkShape = arrayNode.getChunkShape();

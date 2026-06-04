@@ -53,6 +53,15 @@ public abstract class ZarrNode {
         return name;
     }
 
+    public String getFullName() {
+        String filePath = factory.getStorePath();
+        if (filePath != null) {
+            return filePath + ":" + getFullPath();
+        } else {
+            return getFullPath();
+        }
+    }
+
     public ZarrNode getParent() {
         return parent;
     }

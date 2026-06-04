@@ -14,16 +14,23 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
+
 // Zarr Java library
 import dev.zarr.zarrjava.store.StoreHandle;
 import dev.zarr.zarrjava.store.Store;
 import dev.zarr.zarrjava.core.ArrayMetadata;
 import dev.zarr.zarrjava.core.Array;
 import dev.zarr.zarrjava.core.DataType;
+import dev.zarr.zarrjava.core.LenientMetadata;
 
 // Java logging
 import java.util.logging.Logger;
 import java.util.logging.Level;
+
+import com.kulvait.kct.imagej.zarfileopener.JEPBridge;
 
 
 public class ZarrArrayNode extends ZarrNode {
@@ -35,6 +42,7 @@ public class ZarrArrayNode extends ZarrNode {
     private String errorMessage;
     private Array zarrLibArray = null;
     private ArrayMetadata zarLibMetadata = null;
+    private LenientMetadata.ArrayInfo arrayInfo = null;
     private boolean areZarrLibObjectsInitialized = false;
 
     private void initZarrLibObjects() {
@@ -48,6 +56,13 @@ public class ZarrArrayNode extends ZarrNode {
             shape = zarLibMetadata.shape;
             dtype = zarLibMetadata.dataType();
             chunkShape = zarLibMetadata.chunkShape();
+        } else {
+            arrayInfo = factory.getArrayInfo(zarrPath);
+            if (arrayInfo != null) {
+                shape = arrayInfo.shape;
+                dtype = arrayInfo.dataType;
+                chunkShape = arrayInfo.chunkShape;
+            }
         }
         areZarrLibObjectsInitialized = true;
     }
@@ -110,16 +125,87 @@ public class ZarrArrayNode extends ZarrNode {
         return errorMessage;
     }
 
-    public ucar.ma2.Array readArray(final long[] offset, final long[] shape) {
-        initZarrLibObjects();
-        try {
-            if (zarrLibArray == null) {
-                throw new RuntimeException("Array is not initialized");
+
+    public static ucar.ma2.Array arrayFromBytes(String numpyDtype, long[] shape, byte[] bytes) {
+        int[] intShape = new int[shape.length];
+        for (int i = 0; i < shape.length; i++) {
+            intShape[i] = (int) shape[i];
+        }
+
+        java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+
+        switch (numpyDtype) {
+            case "<u1":
+            case "|u1":
+                return ucar.ma2.Array.factory(ucar.ma2.DataType.UBYTE, intShape, bytes);
+            case "<i1":
+            case "|i1":
+                return ucar.ma2.Array.factory(ucar.ma2.DataType.BYTE, intShape, bytes);
+            case "<u2": {
+                short[] a = new short[bytes.length / 2];
+                bb.asShortBuffer().get(a);
+                return ucar.ma2.Array.factory(ucar.ma2.DataType.USHORT, intShape, a);
             }
-            return zarrLibArray.read(offset, shape);
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "Error reading array data: " + e.getMessage(), e);
-            return null;
+            case "<i2": {
+                short[] a = new short[bytes.length / 2];
+                bb.asShortBuffer().get(a);
+                return ucar.ma2.Array.factory(ucar.ma2.DataType.SHORT, intShape, a);
+            }
+            case "<i4": {
+                int[] a = new int[bytes.length / 4];
+                bb.asIntBuffer().get(a);
+                return ucar.ma2.Array.factory(ucar.ma2.DataType.INT, intShape, a);
+            }
+            case "<f4": {
+                float[] a = new float[bytes.length / 4];
+                bb.asFloatBuffer().get(a);
+                return ucar.ma2.Array.factory(ucar.ma2.DataType.FLOAT, intShape, a);
+            }
+            case "<f8": {
+                double[] a = new double[bytes.length / 8];
+                bb.asDoubleBuffer().get(a);
+                return ucar.ma2.Array.factory(ucar.ma2.DataType.DOUBLE, intShape, a);
+            }
+            default:
+                throw new IllegalArgumentException("Unsupported NumPy dtype from GraalPy: " + numpyDtype);
+        }
+    }
+
+
+    public ucar.ma2.Array readArray(final long[] offset, final long[] shape) {
+        String msg;
+        initZarrLibObjects();
+        if (zarrLibArray != null) {
+            logger.log(Level.INFO, "java-zarr zarrLibArray.read array %s data with offset %s and shape %s".formatted(
+                    this.getFullName(),
+                    java.util.Arrays.toString(offset), java.util.Arrays.toString(shape)));
+            try {
+                return zarrLibArray.read(offset, shape);
+            } catch (Exception e) {
+                msg = "java-zarr library read failed for array %s with offset %s and shape %s".formatted(
+                        this.getFullName(),
+                        java.util.Arrays.toString(offset), java.util.Arrays.toString(shape));
+                logger.log(Level.SEVERE, msg, e);
+                throw new RuntimeException(msg, e);
+            }
+        } else if (arrayInfo != null) {
+            logger.log(Level.INFO, "JEPBridge read array %s data with offset %s and shape %s".formatted(
+                    this.getFullName(),
+                    java.util.Arrays.toString(offset), java.util.Arrays.toString(shape)));
+            try {
+                JEPBridge.Result result = ZarrFactory.getJEPBridge().readSlice(factory.getStorePath(), zarrPath,
+                        offset, shape);
+                return arrayFromBytes(result.dtype(), result.shape(), result.bytes());
+            } catch (Exception pyEx) {
+                logger.log(Level.SEVERE, "JEPBridge read failed with exception %s".formatted(pyEx.getMessage()), pyEx);
+                pyEx.printStackTrace();
+                return null;
+            }
+        } else {
+            msg = "Zarr library array object is not initialized, and array info is not available, cannot read data for array %s".formatted(
+                    this.getFullName());
+            logger.log(Level.SEVERE, msg);
+            throw new RuntimeException(msg);
         }
     }
 
