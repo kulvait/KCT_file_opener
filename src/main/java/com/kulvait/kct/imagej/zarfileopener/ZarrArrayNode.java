@@ -171,25 +171,46 @@ public class ZarrArrayNode extends ZarrNode {
         }
     }
 
+    /**
+     * Procedure for native read using java-zarr library:
+     */
+    public ucar.ma2.Array readJavaZarrLibArray(final long[] offset, final long[] shape) {
+        String msg = "java-zarr zarrLibArray.read %s offset %s shape %s".formatted(this.getFullName(),
+                java.util.Arrays.toString(offset), java.util.Arrays.toString(shape));
+        initZarrLibObjects();
+        if (zarrLibArray != null) {
+            logger.log(Level.FINE, msg);
+            try {
+                return zarrLibArray.read(offset, shape);
+            } catch (Exception e) {
+                msg = "FAILED %s with error %s".formatted(msg, e.getMessage());
+                logger.log(Level.SEVERE, msg, e);
+                throw new RuntimeException(msg, e);
+            }
+
+        }
+        return null;
+    }
+
+    public ucar.ma2.Array readJavaZarrLibFrame(final long frameIndex) {
+        long[] offset = new long[shape.length];
+        long[] frameShape = new long[shape.length];
+        offset[0] = frameIndex;
+        frameShape[0] = 1;
+        for (int i = 1; i < shape.length; i++) {
+            frameShape[i] = shape[i];
+        }
+        ucar.ma2.Array frame = readJavaZarrLibArray(offset, frameShape);
+        return frame;
+    }
 
     public ucar.ma2.Array readArray(final long[] offset, final long[] shape) {
         String msg;
         initZarrLibObjects();
         if (zarrLibArray != null) {
-            logger.log(Level.INFO, "java-zarr zarrLibArray.read array %s data with offset %s and shape %s".formatted(
-                    this.getFullName(),
-                    java.util.Arrays.toString(offset), java.util.Arrays.toString(shape)));
-            try {
-                return zarrLibArray.read(offset, shape);
-            } catch (Exception e) {
-                msg = "java-zarr library read failed for array %s with offset %s and shape %s".formatted(
-                        this.getFullName(),
-                        java.util.Arrays.toString(offset), java.util.Arrays.toString(shape));
-                logger.log(Level.SEVERE, msg, e);
-                throw new RuntimeException(msg, e);
-            }
+            return readJavaZarrLibArray(offset, shape);
         } else if (arrayInfo != null) {
-            logger.log(Level.INFO, "JEPBridge read array %s data with offset %s and shape %s".formatted(
+            logger.log(Level.FINE, "JEPBridge read array %s data with offset %s and shape %s".formatted(
                     this.getFullName(),
                     java.util.Arrays.toString(offset), java.util.Arrays.toString(shape)));
             try {
@@ -198,7 +219,7 @@ public class ZarrArrayNode extends ZarrNode {
                 JEPBridge.Result result = ZarrFactory.getJEPBridge(storePath, isZip, zarrPath).readSlice(storePath,
                         zarrPath,
                         offset, shape);
-                logger.log(Level.INFO,
+                logger.log(Level.FINE,
                         "JEPBridge read array %s data with offset %s and shape %s, got result with dtype %s and shape %s".formatted(
                                 this.getFullName(),
                                 java.util.Arrays.toString(offset), java.util.Arrays.toString(shape),
@@ -217,6 +238,116 @@ public class ZarrArrayNode extends ZarrNode {
         }
     }
 
+    public void readFrame(final long frameIndex, byte[] buffer) {
+//We create offset [frameIndex, 0, 0, ...] and shape [1, dim1, dim2, ...] to read a single frame along the first dimension into buffer
+        initZarrLibObjects();
+        String msg = "reading %s[%d]".formatted(this.getFullName(), frameIndex);
+        if (zarrLibArray != null) {
+            try {
+                ucar.ma2.Array frame = readJavaZarrLibFrame(frameIndex);
+                byte[] byteFrame = (byte[]) frame.get1DJavaArray(byte.class);
+                System.arraycopy(byteFrame, 0, buffer, 0, byteFrame.length);
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "ERROR " + msg + " with exception %s".formatted(e.getMessage()), e);
+                throw new RuntimeException("ERROR " + msg + " with exception %s".formatted(e.getMessage()), e);
+            }
+        } else if (arrayInfo != null) {
+            try {
+                String storePath = factory.getStorePath();
+                boolean isZip = factory.isZip();
+                byte[] result = ZarrFactory.getJEPBridge(storePath, isZip, zarrPath).readFrame(frameIndex);
+                System.arraycopy(result, 0, buffer, 0, result.length);
+                return;
+            } catch (Exception pyEx) {
+                logger.log(Level.SEVERE, "JEPBridge read failed with exception %s".formatted(pyEx.getMessage()), pyEx);
+                pyEx.printStackTrace();
+                return;
+            }
+        } else {
+            msg = "initZarrLibObjects issue reading %s[%d]".formatted(this.getFullName(), frameIndex);
+            logger.log(Level.SEVERE, msg);
+            throw new RuntimeException(msg);
+        }
+    }
+
+    public void readFrame(final long frameIndex, short[] buffer) {
+//We create offset [frameIndex, 0, 0, ...] and shape [1, dim1, dim2, ...] to read a single frame along the first dimension into buffer
+        initZarrLibObjects();
+        String msg = "reading %s[%d]".formatted(this.getFullName(), frameIndex);
+        if (zarrLibArray != null) {
+            try {
+                ucar.ma2.Array frame = readJavaZarrLibFrame(frameIndex);
+                short[] shortFrame = (short[]) frame.get1DJavaArray(short.class);
+                System.arraycopy(shortFrame, 0, buffer, 0, shortFrame.length);
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "ERROR " + msg + " with exception %s".formatted(e.getMessage()), e);
+                throw new RuntimeException("ERROR " + msg + " with exception %s".formatted(e.getMessage()), e);
+            }
+        } else if (arrayInfo != null) {
+            try {
+                String storePath = factory.getStorePath();
+                boolean isZip = factory.isZip();
+                byte[] result = ZarrFactory.getJEPBridge(storePath, isZip, zarrPath).readFrame(frameIndex);
+                ByteBuffer.wrap(result).order(ByteOrder.LITTLE_ENDIAN) // or BIG_ENDIAN depending on your data
+                          .asShortBuffer().get(buffer);
+                return;
+            } catch (Exception pyEx) {
+                logger.log(Level.SEVERE, "JEPBridge read failed with exception %s".formatted(pyEx.getMessage()), pyEx);
+                pyEx.printStackTrace();
+                return;
+            }
+        } else {
+            msg = "initZarrLibObjects issue reading %s[%d]".formatted(this.getFullName(), frameIndex);
+            logger.log(Level.SEVERE, msg);
+            throw new RuntimeException(msg);
+        }
+    }
+
+    public void readFrame(final long frameIndex, float[] buffer) {
+//We create offset [frameIndex, 0, 0, ...] and shape [1, dim1, dim2, ...] to read a single frame along the first dimension into buffer
+        initZarrLibObjects();
+        String msg = "reading %s[%d]".formatted(this.getFullName(), frameIndex);
+        if (zarrLibArray != null) {
+            try {
+                ucar.ma2.Array frame = readJavaZarrLibFrame(frameIndex);
+                float[] floatFrame = (float[]) frame.get1DJavaArray(float.class);
+                System.arraycopy(floatFrame, 0, buffer, 0, floatFrame.length);
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "ERROR " + msg + " with exception %s".formatted(e.getMessage()), e);
+                throw new RuntimeException("ERROR " + msg + " with exception %s".formatted(e.getMessage()), e);
+            }
+        } else if (arrayInfo != null) {
+            try {
+                String storePath = factory.getStorePath();
+                boolean isZip = factory.isZip();
+                byte[] result = ZarrFactory.getJEPBridge(storePath, isZip, zarrPath).readFrame(frameIndex);
+                if (dtype.getMA2DataType() == ucar.ma2.DataType.FLOAT) {
+                    ByteBuffer.wrap(result).order(ByteOrder.LITTLE_ENDIAN) // or BIG_ENDIAN depending on your data
+                              .asFloatBuffer().get(buffer);
+                    return;
+                } else {
+//Do conversion to ucar
+                    long[] frameShape = new long[shape.length];
+                    frameShape[0] = 1;
+                    for (int i = 1; i < shape.length; i++) {
+                        frameShape[i] = shape[i];
+                    }
+                    ucar.ma2.Array frame = arrayFromBytes(arrayInfo.dataType().toString(), frameShape, result);
+                    float[] floatFrame = (float[]) frame.get1DJavaArray(float.class);
+                    System.arraycopy(floatFrame, 0, buffer, 0, floatFrame.length);
+                    return;
+                }
+            } catch (Exception pyEx) {
+                logger.log(Level.SEVERE, "JEPBridge read failed with exception %s".formatted(pyEx.getMessage()), pyEx);
+                pyEx.printStackTrace();
+                return;
+            }
+        } else {
+            msg = "initZarrLibObjects issue reading %s[%d]".formatted(this.getFullName(), frameIndex);
+            logger.log(Level.SEVERE, msg);
+            throw new RuntimeException(msg);
+        }
+    }
 
 //Test if name starts with c for chunks of 
     private boolean isChunkKey(String name) {

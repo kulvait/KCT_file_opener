@@ -22,9 +22,12 @@ import java.util.logging.Level;
 
 import ij.ImageStack;
 import ij.process.FloatProcessor;
+import ij.process.ByteProcessor;
+import java.awt.image.ColorModel;
+import ij.process.ShortProcessor;
 import ij.process.ImageProcessor;
 // zarr Java imports
-import dev.zarr.zarrjava.core.DataType;
+import ucar.ma2.DataType;
 import dev.zarr.zarrjava.core.Array;
 
 // Ideas based on
@@ -45,7 +48,14 @@ public class ZarVirtualStack extends ImageStack {
     long[] shape;
     long[] frameShape; // Shape of array to read into buffer
     long[] multiblockSize;// For 4D and higher dimensional arrays we need to compute size of multiblocks to compute offset
-    float[] pixelArray;
+
+    private FloatProcessor cachedFloatProcessor = null;
+    private ShortProcessor cachedShortProcessor = null;
+    private ByteProcessor cachedByteProcessor = null;
+    float[] pixelFloatArray;
+    short[] pixelShortArray;
+    byte[] pixelByteArray;
+    byte[] byteBuffer;
 
 
     public ZarVirtualStack(File f, String[] path) throws IOException {
@@ -73,7 +83,7 @@ public class ZarVirtualStack extends ImageStack {
         arrayNode = (ZarrArrayNode) root.getDescendant(path);
         shape = arrayNode.getShape();
         chunkShape = arrayNode.getChunkShape();
-        dtype = arrayNode.getDataType();
+        dtype = arrayNode.getDataType().getMA2DataType();
 // Be aware data alignment in numpy notation z,y,x and chunk shape z,y,x
         multiblockSize = new long[shape.length];
         if (shape.length == 1) {
@@ -115,10 +125,18 @@ public class ZarVirtualStack extends ImageStack {
             }
         }
         frameSize = dimx * dimy;
-        pixelArray = new float[frameSize];
+        if (dtype == DataType.BYTE || dtype == DataType.UBYTE) {
+            pixelByteArray = new byte[frameSize];
+        } else if (dtype == DataType.SHORT || dtype == DataType.USHORT) {
+            pixelShortArray = new short[frameSize];
+            byteBuffer = new byte[frameSize * 2];// We need byte buffer to read short data as byte array and then convert it to short array
+        } else {
+            pixelFloatArray = new float[frameSize];
+            byteBuffer = new byte[frameSize * 4];// We need byte buffer to read float data as byte array and then convert it to float array
+        }
 
         //typ = inf.getElementType();
-        //pixelArray = new float[frameSize];
+        //pixelFloatArray = new float[frameSize];
     }
 
     /**
@@ -157,50 +175,92 @@ public class ZarVirtualStack extends ImageStack {
     // 1 based n
     public ImageProcessor getProcessor(int n) {
         getPixels(n);
-        FloatProcessor fp = new FloatProcessor(dimx, dimy, pixelArray);
-        return fp;
+        if (dtype == DataType.BYTE || dtype == DataType.UBYTE) {
+            if (cachedByteProcessor == null) {
+                cachedByteProcessor = new ByteProcessor(dimx, dimy, pixelByteArray);
+            }
+            return cachedByteProcessor;
+        } else if (dtype == DataType.SHORT || dtype == DataType.USHORT) {
+            if (cachedShortProcessor == null) {
+                ColorModel cm = null;
+                cachedShortProcessor = new ShortProcessor(dimx, dimy, pixelShortArray, cm);
+            }
+            return cachedShortProcessor;
+        } else {
+            if (cachedFloatProcessor == null) {
+                cachedFloatProcessor = new FloatProcessor(dimx, dimy, pixelFloatArray);
+            } else {
+                //cachedFloatProcessor.resetMinAndMax();
+                //cachedFloatProcessor.setPixels(pixelFloatArray);
+            }
+            return cachedFloatProcessor;
+        }
 
     }
 
     public Object getPixels(int n) {
-        if (pixelArray == null || pixelArray.length != frameSize)
-            pixelArray = new float[frameSize];
+        if (pixelFloatArray == null || pixelFloatArray.length != frameSize)
+            pixelFloatArray = new float[frameSize];
         long startTime = System.currentTimeMillis();
         int frameIndex = n - 1;// ImageJ is 1 based, so we need to subtract 1
         if (frameIndex < 0 || frameIndex >= dimz) {
             throw new RuntimeException(String.format(
                     "Illegal acces to the slice %d/%d", n - 1, dimz));
         }
-        long[] offset = new long[frameShape.length];
-        if (frameShape.length <= 3) {
+        if (frameShape.length == 3) {
             // For 1D, 2D and 3D arrays we can directly calculate
-            offset[0] = frameIndex;
+            if (dtype == DataType.BYTE || dtype == DataType.UBYTE) {
+                arrayNode.readFrame(frameIndex, pixelByteArray);
+            } else if (dtype == DataType.SHORT || dtype == DataType.USHORT) {
+                arrayNode.readFrame(frameIndex, pixelShortArray);
+            } else {
+                arrayNode.readFrame(frameIndex, pixelFloatArray);
+            }
         } else {
             // Computing multiindex is difficult so we precompute sizes of multiblocks
+            long[] offset = new long[frameShape.length];
+            offset[0] = frameIndex;
             long extendedIndex = frameIndex;
             for (int i = 0; i < frameShape.length - 2; i++) {
                 offset[i] = extendedIndex / multiblockSize[i];
                 extendedIndex = extendedIndex % multiblockSize[i];
             }
+            ucar.ma2.Array slice = arrayNode.readArray(offset, frameShape);
+            if (slice == null) {
+                throw new RuntimeException(String.format(
+                        "Can not read slice %d/%d", n - 1, dimz));
+            }
+            if (dtype == DataType.BYTE || dtype == DataType.UBYTE) {
+                byte[] raw = (byte[]) slice.get1DJavaArray(byte.class);
+                System.arraycopy(raw, 0, pixelByteArray, 0, raw.length);
+            } else if (dtype == DataType.SHORT || dtype == DataType.USHORT) {
+                short[] raw = (short[]) slice.get1DJavaArray(short.class);
+                System.arraycopy(raw, 0, pixelShortArray, 0, raw.length);
+            } else {
+                float[] raw = (float[]) slice.get1DJavaArray(float.class);
+                System.arraycopy(raw, 0, pixelFloatArray, 0, raw.length);
+            }
         }
-        ucar.ma2.Array slice = arrayNode.readArray(offset, frameShape);
-        if (slice == null) {
-            throw new RuntimeException(String.format(
-                    "Can not read slice %d/%d", n - 1, dimz));
-        }
-        for (int i = 0; i < pixelArray.length; i++) {
-            pixelArray[i] = slice.getFloat(i);
-        }
+        // We can read directly into buffer to avoid copying, but we need to use correct byte
         long diffTime = System.currentTimeMillis() - startTime;
         logger.log(Level.INFO, String.format("Time to read slice %d/%d: %d ms", n - 1, dimz, diffTime));
-        return pixelArray;
+        return pixelFloatArray;
     }
 
     /**
      * 8=byte, 16=short, 24=RGB, 32=float
      */
     public int getBitDepth() {
-        return 32;// We use float as internal representation, so it is always 32 bit depth
+        if (dtype == DataType.BYTE || dtype == DataType.UBYTE) {
+            return 8;
+        } else if (dtype == DataType.SHORT || dtype == DataType.USHORT) {
+            return 16;
+        } else
+            if (dtype == DataType.INT || dtype == DataType.UINT || dtype == DataType.FLOAT || dtype == DataType.DOUBLE || dtype == DataType.LONG || dtype == DataType.ULONG) {
+                return 32;// We use float as internal representation, so it is always 32 bit depth
+            } else {
+                throw new RuntimeException(String.format("Unsupported data type %s!", dtype));
+            }
     }
 
     public int getSize() {
@@ -220,7 +280,8 @@ public class ZarVirtualStack extends ImageStack {
     }
 
     public String getSliceLabel(int n) {
-        return String.format("z=%d", n - 1, (int) dimz);
+        //return String.format("z=%d/%d", n - 1, (int) dimz);
+        return String.format("z=%d/%d", n - 1);
     }
 
     public boolean isVirtual() {

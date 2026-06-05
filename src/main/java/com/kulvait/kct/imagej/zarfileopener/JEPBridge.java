@@ -58,9 +58,6 @@ public class JEPBridge implements AutoCloseable {
     /** Lazily create the shared bridge. Throws if the env cannot be located. */
     public static synchronized JEPBridge get(String envPrefix, String storePath, boolean isZip, String[] zarrPath) {
         if (INSTANCE == null) {
-            if (envPrefix == null) {
-                envPrefix = "/data/hereon/wp/group/laupy/share/mamba_env/minizarr";
-            }
             logger.log(Level.INFO, "Initializing JEP bridge with env prefix: %s".formatted(envPrefix));
             try {
                 configureMainInterpreter(envPrefix);
@@ -144,46 +141,45 @@ public class JEPBridge implements AutoCloseable {
             cfg.setClassEnquirer(new NamingConventionClassEnquirer(true));
             SharedInterpreter.setConfig(cfg);
             interp = new SharedInterpreter();
-            logger.info("import numpy as np");
+            //logger.info("import numpy as np");
             interp.exec("import numpy as np");
-            logger.info("import zarr");
+            //logger.info("import zarr");
             interp.exec("import zarr");
-            logger.info("import imagecodecs");
+            //logger.info("import imagecodecs");
             interp.exec("import imagecodecs");
-            logger.info("from imagecodecs.numcodecs import register_codecs as register_numcodecs_codecs");
+            //logger.info("from imagecodecs.numcodecs import register_codecs as register_numcodecs_codecs");
             interp.exec("from imagecodecs.numcodecs import register_codecs as register_numcodecs_codecs");
-            logger.info("from imagecodecs.zarr import register_codecs as register_zarr_codecs");
+            //logger.info("from imagecodecs.zarr import register_codecs as register_zarr_codecs");
             interp.exec("from imagecodecs.zarr import register_codecs as register_zarr_codecs");
-            logger.info("register_numcodecs_codecs()");
+            //logger.info("register_numcodecs_codecs()");
             interp.exec("register_numcodecs_codecs()");
-            logger.info("register_zarr_codecs()");
+            //logger.info("register_zarr_codecs()");
             interp.exec("register_zarr_codecs()");
 
             interp.exec(READ_SLICE_FUNC);
+            interp.exec(READ_FRAME_FUNC);
             if (isZip) {
                 String cmd = "store = zarr.storage.ZipStore(\"%s\", mode=\"r\")".formatted(storePath);
-                logger.info(cmd);
+                //logger.info(cmd);
                 interp.exec(cmd);
             } else {
                 String cmd = "store = \"%s\"".formatted(storePath);
-                logger.info(cmd);
+                //logger.info(cmd);
                 interp.exec(cmd);
             }
             if (zarrPath == null || zarrPath.length == 0) {
                 String cmd = "array = zarr.open_array(store=store, mode='r')";
-                logger.info(cmd);
+                //logger.info(cmd);
                 interp.exec(cmd);
             } else {
-
                 String zarrPathStr = String.join("/", zarrPath);
                 String cmd1 = "g = zarr.open_group(store=store, mode='r')";
                 String cmd2 = "array = g['%s']".formatted(zarrPathStr);
-                logger.info(cmd1);
-                logger.info(cmd2);
+                //logger.info(cmd1);
+                //logger.info(cmd2);
                 interp.exec(cmd1);
                 interp.exec(cmd2);
             }
-
 
             logger.info("JEP zarr bridge interpreter ready (env=" + envPrefix + ")");
             return null;
@@ -196,16 +192,21 @@ public class JEPBridge implements AutoCloseable {
         this.zarrPath = zarrPath;
         submit(() -> {
             if (isZip) {
-                interp.exec("store = zarr.storage.ZipStore(\"%s\", mode=\"r\")".formatted(pyStr(storePath)));
+                String cmd = "store = zarr.storage.ZipStore(\"%s\", mode=\"r\")".formatted(storePath);
+                interp.exec(cmd);
             } else {
-                interp.exec("store = \"%s\"".formatted(pyStr(storePath)));
+                String cmd = "store = \"%s\"".formatted(storePath);
+                interp.exec(cmd);
             }
             if (zarrPath == null || zarrPath.length == 0) {
-                interp.exec("array = zarr.open_groupt(store=store, mode='r')");
+                String cmd = "array = zarr.open_array(store=store, mode='r')";
+                interp.exec(cmd);
             } else {
                 String zarrPathStr = String.join("/", zarrPath);
-                interp.exec("g = zarr.open_array(store=store, mode='r')");
-                interp.exec("array = g['%s']".formatted(pyStr(zarrPathStr)));
+                String cmd1 = "g = zarr.open_group(store=store, mode='r')";
+                String cmd2 = "array = g['%s']".formatted(zarrPathStr);
+                interp.exec(cmd1);
+                interp.exec(cmd2);
             }
             return null;
         });
@@ -227,6 +228,14 @@ public class JEPBridge implements AutoCloseable {
             long[] outShape = toLongArray(interp.getValue("out_shape"));
             byte[] bytes = (byte[]) interp.getValue("data");
             return new Result(dtype, outShape, bytes);
+        });
+    }
+
+    public byte[] readFrame(long idx) throws Exception {
+        return submit(() -> {
+            interp.set("idx", idx);
+            interp.exec("data = _kct_read_frame(idx)");
+            return (byte[]) interp.getValue("data");
         });
     }
 
@@ -255,10 +264,6 @@ public class JEPBridge implements AutoCloseable {
         return out;
     }
 
-    private static String pyStr(String s) {
-        return "r'''" + s.replace("'''", "") + "'''";
-    }
-
     @Override
     public void close() {
         worker.submit(() -> {
@@ -283,6 +288,14 @@ public class JEPBridge implements AutoCloseable {
         "        data = data.astype(data.dtype.newbyteorder('<'))\n" +
         "    return (data.dtype.str, list(int(x) for x in data.shape), data.tobytes())\n";
     */
+
+    private static final String READ_FRAME_FUNC = """
+            def _kct_read_frame(idx):
+                data = array[idx]
+                data = np.ascontiguousarray(data)
+                return data.tobytes()
+            """;
+
     private static final String READ_SLICE_FUNC = """
             def _kct_read_slice(store_path, zarr_path, offset, shape):
                 data = array[offset[0]]

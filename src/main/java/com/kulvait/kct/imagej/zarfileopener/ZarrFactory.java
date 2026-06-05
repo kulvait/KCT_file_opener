@@ -514,8 +514,10 @@ public class ZarrFactory {
             //Start as ./ImageJ-linux64 -Dkct.python.env=/data/hereon/wp/group/laupy/share/mamba_env/minizarr
             String envPath = System.getProperty(
                     "kct.python.env",
-                    "/data/hereon/wp/group/laupy/share/mamba_env/minizarr"
+                    null
             );
+            if (envPath == null)
+                envPath = System.getenv("PYTHONHOME");
             jepBridge = JEPBridge.get(envPath, storePathIn, isZipIn, zarrPathIn);
         }
         return jepBridge;

@@ -61,6 +61,15 @@ public class ZarFileOpener implements PlugIn {
     public void run(String arg) {
 
         Logger rootLogger = Logger.getLogger("com.kulvait.kct.imagej.zarfileopener");
+        String levelStr = System.getProperty("kct.log.level", "INFO");
+        Level consoleLevel;
+        try {
+            consoleLevel = Level.parse(levelStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            System.out.printf("Invalid log level '%s', defaulting to WARNING%n", levelStr);
+            consoleLevel = Level.INFO;
+        }
+
         rootLogger.setLevel(Level.ALL);
         rootLogger.setUseParentHandlers(false);
         // Remove default handlers if needed
@@ -71,7 +80,8 @@ public class ZarFileOpener implements PlugIn {
 
         // Add console handler that prints all levels
         ConsoleHandler consoleHandler = new ConsoleHandler();
-        consoleHandler.setLevel(Level.FINE); // allow debug messages
+        //consoleHandler.setLevel(Level.FINE); // allow debug messages
+        consoleHandler.setLevel(consoleLevel);
         LineNumberFormatter formatter = new LineNumberFormatter();
         consoleHandler.setFormatter(formatter);
         rootLogger.addHandler(consoleHandler);
