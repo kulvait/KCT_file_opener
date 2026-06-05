@@ -508,14 +508,15 @@ public class ZarrFactory {
     }
 
 
-    public static synchronized JEPBridge getJEPBridge() {
+    /** Method is static to get only one python instance */
+    public static synchronized JEPBridge getJEPBridge(String storePathIn, boolean isZipIn, String[] zarrPathIn) {
         if (jepBridge == null) {
             //Start as ./ImageJ-linux64 -Dkct.python.env=/data/hereon/wp/group/laupy/share/mamba_env/minizarr
             String envPath = System.getProperty(
                     "kct.python.env",
                     "/data/hereon/wp/group/laupy/share/mamba_env/minizarr"
             );
-            jepBridge = JEPBridge.get(envPath);
+            jepBridge = JEPBridge.get(envPath, storePathIn, isZipIn, zarrPathIn);
         }
         return jepBridge;
     }

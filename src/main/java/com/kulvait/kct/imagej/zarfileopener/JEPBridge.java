@@ -15,6 +15,7 @@ import jep.Interpreter;
 import jep.JepConfig;
 import jep.MainInterpreter;
 import jep.SharedInterpreter;
+import jep.NamingConventionClassEnquirer;
 
 
 /**
@@ -48,23 +49,37 @@ public class JEPBridge implements AutoCloseable {
     private final String envPrefix;
 
 
+//Curent state of teh intepretter
+    private String storePath;
+    private boolean isZip;
+    private String[] zarrPath;
+
+
     /** Lazily create the shared bridge. Throws if the env cannot be located. */
-    public static synchronized JEPBridge get(String envPrefix) {
+    public static synchronized JEPBridge get(String envPrefix, String storePath, boolean isZip, String[] zarrPath) {
         if (INSTANCE == null) {
             if (envPrefix == null) {
                 envPrefix = "/data/hereon/wp/group/laupy/share/mamba_env/minizarr";
             }
-            logger.log(Level.INFO, "Initializing JEP bridge with env prefix: {0}", envPrefix);
+            logger.log(Level.INFO, "Initializing JEP bridge with env prefix: %s".formatted(envPrefix));
             try {
                 configureMainInterpreter(envPrefix);
                 JEPBridge bridge = new JEPBridge(envPrefix);
-                bridge.startInterpreter();
+                bridge.startInterpreter(storePath, isZip, zarrPath);
                 INSTANCE = bridge;
             } catch (Exception e) {
                 logger.log(Level.SEVERE, "Failed to initialize JEP bridge with env prefix " + envPrefix, e);
                 logger.log(Level.SEVERE, e.getMessage());
                 e.printStackTrace();
                 INSTANCE = null; // ensure we don't return a half-initialized instance
+            }
+        } else {
+            try {
+                INSTANCE.updateInterpreter(storePath, isZip, zarrPath);
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "Failed to update JEP bridge interpreter with new store path and zarr path",
+                        e);
+                e.printStackTrace();
             }
         }
         return INSTANCE;
@@ -84,7 +99,7 @@ public class JEPBridge implements AutoCloseable {
         // Help the dynamic linker find libpythonX.Y from the env at runtime.
         // (On Linux you may also need LD_LIBRARY_PATH=$PREFIX/lib set externally.)
         mainConfigured = true;
-        logger.log(Level.INFO, "JEP configured with libjep at {0}", libjep);
+        logger.log(Level.INFO, "JEP configured with libjep at %s".formatted(libjep));
     }
 
     private static Path findSitePackages(String envPrefix) throws Exception {
@@ -118,24 +133,90 @@ public class JEPBridge implements AutoCloseable {
         throw new IllegalStateException("libjep not found in " + jepDir + " — is the 'jep' package installed in the env?");
     }
 
-    private void startInterpreter() throws Exception {
+    private void startInterpreter(String storePath, boolean isZip, String[] zarrPath) throws Exception {
         Path sitePackages = findSitePackages(envPrefix);
+        this.storePath = storePath;
+        this.isZip = isZip;
+        this.zarrPath = zarrPath;
         submit(() -> {
             JepConfig cfg = new JepConfig();
             cfg.addIncludePaths(sitePackages.toString());
-            interp = new SharedInterpreter(); // honors MainInterpreter config
-            interp.exec("import sys");
-            interp.exec("sys.path.insert(0, " + pyStr(sitePackages.toString()) + ")");
+            cfg.setClassEnquirer(new NamingConventionClassEnquirer(true));
+            SharedInterpreter.setConfig(cfg);
+            interp = new SharedInterpreter();
+            logger.info("import numpy as np");
             interp.exec("import numpy as np");
+            logger.info("import zarr");
             interp.exec("import zarr");
+            logger.info("import imagecodecs");
+            interp.exec("import imagecodecs");
+            logger.info("from imagecodecs.numcodecs import register_codecs as register_numcodecs_codecs");
+            interp.exec("from imagecodecs.numcodecs import register_codecs as register_numcodecs_codecs");
+            logger.info("from imagecodecs.zarr import register_codecs as register_zarr_codecs");
+            interp.exec("from imagecodecs.zarr import register_codecs as register_zarr_codecs");
+            logger.info("register_numcodecs_codecs()");
+            interp.exec("register_numcodecs_codecs()");
+            logger.info("register_zarr_codecs()");
+            interp.exec("register_zarr_codecs()");
+
             interp.exec(READ_SLICE_FUNC);
+            if (isZip) {
+                String cmd = "store = zarr.storage.ZipStore(\"%s\", mode=\"r\")".formatted(storePath);
+                logger.info(cmd);
+                interp.exec(cmd);
+            } else {
+                String cmd = "store = \"%s\"".formatted(storePath);
+                logger.info(cmd);
+                interp.exec(cmd);
+            }
+            if (zarrPath == null || zarrPath.length == 0) {
+                String cmd = "array = zarr.open_array(store=store, mode='r')";
+                logger.info(cmd);
+                interp.exec(cmd);
+            } else {
+
+                String zarrPathStr = String.join("/", zarrPath);
+                String cmd1 = "g = zarr.open_group(store=store, mode='r')";
+                String cmd2 = "array = g['%s']".formatted(zarrPathStr);
+                logger.info(cmd1);
+                logger.info(cmd2);
+                interp.exec(cmd1);
+                interp.exec(cmd2);
+            }
+
+
             logger.info("JEP zarr bridge interpreter ready (env=" + envPrefix + ")");
+            return null;
+        });
+    }
+
+    private void updateInterpreter(String storePath, boolean isZip, String[] zarrPath) throws Exception {
+        this.storePath = storePath;
+        this.isZip = isZip;
+        this.zarrPath = zarrPath;
+        submit(() -> {
+            if (isZip) {
+                interp.exec("store = zarr.storage.ZipStore(\"%s\", mode=\"r\")".formatted(pyStr(storePath)));
+            } else {
+                interp.exec("store = \"%s\"".formatted(pyStr(storePath)));
+            }
+            if (zarrPath == null || zarrPath.length == 0) {
+                interp.exec("array = zarr.open_groupt(store=store, mode='r')");
+            } else {
+                String zarrPathStr = String.join("/", zarrPath);
+                interp.exec("g = zarr.open_array(store=store, mode='r')");
+                interp.exec("array = g['%s']".formatted(pyStr(zarrPathStr)));
+            }
             return null;
         });
     }
 
     /** Reads a slice via Python/zarr and returns raw little-endian bytes. */
     public Result readSlice(String storePath, String[] zarrPath, long[] offset, long[] shape) throws Exception {
+        if (storePath != null && !storePath.equals(this.storePath) || zarrPath != null && !java.util.Arrays.equals(
+                zarrPath, this.zarrPath)) {
+            updateInterpreter(storePath, this.isZip, zarrPath);
+        }
         return submit(() -> {
             interp.set("store_path", storePath);
             interp.set("zarr_path", String.join("/", zarrPath));
@@ -153,9 +234,18 @@ public class JEPBridge implements AutoCloseable {
         return worker.submit(task).get();
     }
 
+
     private static long[] toLongArray(Object value) {
         if (value instanceof long[] l) {
             return l;
+        }
+        // JEP converts Python list() to java.util.List, not Object[]
+        if (value instanceof java.util.List<?> list) {
+            long[] out = new long[list.size()];
+            for (int i = 0; i < list.size(); i++) {
+                out[i] = ((Number) list.get(i)).longValue();
+            }
+            return out;
         }
         Object[] arr = (Object[]) value;
         long[] out = new long[arr.length];
@@ -193,5 +283,33 @@ public class JEPBridge implements AutoCloseable {
         "        data = data.astype(data.dtype.newbyteorder('<'))\n" +
         "    return (data.dtype.str, list(int(x) for x in data.shape), data.tobytes())\n";
     */
-    private static final String READ_SLICE_FUNC = "def _kct_read_slice(store_path, zarr_path, offset, shape):\n" + "    import numpy as np\n" + "    shp = tuple(int(s) for s in shape)\n" + "    if len(shp) == 0:\n" + "        data = np.asarray(0, dtype=np.float32)\n" + "    else:\n" + "        # Generate a deterministic stripe/ramp pattern for testing Java <-> Python transfer.\n" + "        # This ignores store_path/zarr_path and only uses requested shape.\n" + "        idx = np.indices(shp, dtype=np.int32)\n" + "        data = (idx.sum(axis=0) % 256).astype(np.float32)\n" + "    data = np.ascontiguousarray(data)\n" + "    return (data.dtype.str, list(int(x) for x in data.shape), data.tobytes())\n";
+    private static final String READ_SLICE_FUNC = """
+            def _kct_read_slice(store_path, zarr_path, offset, shape):
+                data = array[offset[0]]
+                data = np.ascontiguousarray(data)
+                return (
+                    data.dtype.str,
+                    list(int(x) for x in data.shape),
+                    data.tobytes()
+                )
+            """;
+
+    private static final String TEST_SLICE_FUNC = """
+            def _kct_read_slice(store_path, zarr_path, offset, shape):
+                shp = tuple(int(s) for s in shape)
+                if len(shp) == 0:
+                    data = np.asarray(0, dtype=np.float32)
+                else:
+                    # Generate a deterministic stripe/ramp pattern for testing Java <-> Python transfer.
+                    # This ignores store_path/zarr_path and only uses requested shape.
+                    idx = np.indices(shp, dtype=np.int32)
+                    data = (idx.sum(axis=0) % 256).astype(np.float32)
+
+                data = np.ascontiguousarray(data)
+                return (
+                    data.dtype.str,
+                    list(int(x) for x in data.shape),
+                    data.tobytes()
+                )
+            """;
 }

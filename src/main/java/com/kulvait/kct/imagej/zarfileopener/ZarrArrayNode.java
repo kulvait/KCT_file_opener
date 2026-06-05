@@ -193,8 +193,16 @@ public class ZarrArrayNode extends ZarrNode {
                     this.getFullName(),
                     java.util.Arrays.toString(offset), java.util.Arrays.toString(shape)));
             try {
-                JEPBridge.Result result = ZarrFactory.getJEPBridge().readSlice(factory.getStorePath(), zarrPath,
+                String storePath = factory.getStorePath();
+                boolean isZip = factory.isZip();
+                JEPBridge.Result result = ZarrFactory.getJEPBridge(storePath, isZip, zarrPath).readSlice(storePath,
+                        zarrPath,
                         offset, shape);
+                logger.log(Level.INFO,
+                        "JEPBridge read array %s data with offset %s and shape %s, got result with dtype %s and shape %s".formatted(
+                                this.getFullName(),
+                                java.util.Arrays.toString(offset), java.util.Arrays.toString(shape),
+                                result.dtype(), java.util.Arrays.toString(result.shape())));
                 return arrayFromBytes(result.dtype(), result.shape(), result.bytes());
             } catch (Exception pyEx) {
                 logger.log(Level.SEVERE, "JEPBridge read failed with exception %s".formatted(pyEx.getMessage()), pyEx);
