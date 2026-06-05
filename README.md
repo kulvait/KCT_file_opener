@@ -4,7 +4,7 @@ ImageJ/Fiji plugin for opening Zarr and DEN files. Using [JEP](https://github.co
 
 ## Motivation
 
-This plugin is similar to [KCT DEN File Opener](https://github.com/kulvait/KCT_den_file_opener) but relies on the **dependence heavy `[zarr-java](https://github.com/kulvait/zarr-java)` library**, so it was developed independently to handle Zarr files alongside DEN files in a single JAR.
+This plugin is similar to [KCT DEN File Opener](https://github.com/kulvait/KCT_den_file_opener) but relies on the [zarr-java](https://github.com/kulvait/zarr-java) library. Due to number of recursive dependencies, it was developed independently of original [KCT DEN File Opener](https://github.com/kulvait/KCT_den_file_opener) as its version supporting Zarr for the price of more complex build and setup.
 
 Library [zarr-java](https://github.com/zarr-developers/zarr-java) had slow implementation of on disk Zip reading, which was fixed in the fork [zarr-java](https://github.com/kulvait/zarr-java). It is fast Java native implementation of Zarr format, but it lacks support for custom codecs such as those in Python package [imagecodecs](https://github.com/cgohlke/imagecodecs). Therefore, this plugin uses JEP to leverage Python's imagecodecs for decoding Zarr arrays, providing a practical solution that works better for most use cases than other existing approaches.
 
@@ -103,7 +103,6 @@ mvn clean package -Denforcer.skip=true
 
 Copy jar file from target directory to ~/.imagej/plugins and jars from dependency-jars to ~/.imagej/jars and restart ImageJ.
 
-When compiling the plugin, make sure to include the JEP dependency in your `pom.xml` and ensure that the JEP native library is accessible at runtime (e.g., by adding it to `LD_LIBRARY_PATH`).
 
 For fat jar with all dependencies included run, not tested yet due to array of depencencies of `zarr-java`:
 
@@ -130,6 +129,23 @@ apt-get install temurin-21-jre
 
 It shall work with [Java 17 temurin](https://github.com/adoptium/temurin17-binaries) or [Java 21 temurin](https://github.com/adoptium/temurin21-binaries), but it is not guaranteed to work with older Java versions. 
 
+## FiJi integration
+
+Depending on the setup it might be necessery to update `LD_LIBRARY_PATH` to include lib path of Python environment, where JEP is installed and `JAVA_HOME` against which it was built. For example we can create a script to run Fiji with the correct environment variables set:
+
+```bash
+export ENV=/<PATH_TO_ENV>/minizarr
+export FIJI_HOME=<PATH_TO_FIJI>
+export JAVA_HOME=<PATH_TO_TREMULIN>/jdk-21
+export PATH=$JAVA_HOME/bin:$ENV/bin:$PATH
+export LD_LIBRARY_PATH=$ENV/lib:$LD_LIBRARY_PATH
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+"$SCRIPT_DIR/fiji-linux-x64" \
+    -- \
+    -Dkct.python.env="$ENV" 
+
+```
 ## Drag and drop
 
 A custom `HandleExtraFileTypes` implementation provides drag-and-drop support for all three formats.
