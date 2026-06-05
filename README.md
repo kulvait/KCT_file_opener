@@ -1,26 +1,91 @@
 # KCT File Opener
 
+ImageJ/Fiji plugin for opening Zarr and DEN files. Using [JEP](https://github.com/ninia/jep), any Zarr array encoded with a codec supported by Python's [imagecodecs](https://github.com/cgohlke/imagecodecs) or custom cedecs in Python can be opened in ImageJ without the need for Java implementations of these codecs. This plugin is designed to be a practical solution for opening on-disk Zarr files and DEN files used in the KCT project, providing better performance and reliability than other existing approaches.
+
 ## Motivation
 
-Due to the need for **compressed multidimensional formats** in the KCT project, the existing DEN format will gradually be supplemented by **Zarr**.
+This plugin is similar to [KCT DEN File Opener](https://github.com/kulvait/KCT_den_file_opener) but relies on the **dependence heavy `[zarr-java](https://github.com/kulvait/zarr-java)` library**, so it was developed independently to handle Zarr files alongside DEN files in a single JAR.
 
-We needed a **reliable plugin** to quickly visualize these files without being burdened by unnecessary features.
+Library [zarr-java](https://github.com/zarr-developers/zarr-java) had slow implementation of on disk Zip reading, which was fixed in the fork [zarr-java](https://github.com/kulvait/zarr-java). It is fast Java native implementation of Zarr format, but it lacks support for custom codecs such as those in Python package [imagecodecs](https://github.com/cgohlke/imagecodecs). Therefore, this plugin uses JEP to leverage Python's imagecodecs for decoding Zarr arrays, providing a practical solution that works better for most use cases than other existing approaches.
 
-This plugin is similar to [KCT DEN File Opener](https://github.com/kulvait/KCT_den_file_opener) but relies on the **heavy `java-zarr` library**, so it was developed independently to handle Zarr files effectively.
 
 The architecture mirrors the original DEN file opener: it leverages [ImageJ’s Raw File Opener](https://imagej.nih.gov/ij/plugins/raw-file-opener.html) logic, using a pluggable backend for reading data.
 
-Its primary goal is to open **on-disk Zarr files** and [DEN files](https://kulvait.github.io/KCT_doc/den-format.html) used in the KCT project. While it may not implement the full Zarr specification, it provides a practical solution that works better for most use cases than other existing approaches. It is not necessary to install DEN file opener to open DEN files, as this plugin can handle both formats. When you do not need Zarr support, you can use the DEN file opener which is more lightweight and does not require array of dependencies.
+Its primary goal is to open **on-disk Zarr files** and [DEN files](https://kulvait.github.io/KCT_doc/den-format.html) used in the KCT project. Two key capabilities distinguish this plugin:
 
-How to use this plugin
-======================
+- **Arbitrary imagecodecs codec support** — via Python bindings ([JEP](https://github.com/ninia/jep) bridge to CPython), any Zarr array encoded with a codec supported by Python's [imagecodecs](https://github.com/cgohlke/imagecodecs) library can be opened, without requiring a native Java implementation of that codec.
+- **Good performance on zipped Zarr** — the underlying [zarr-java](https://github.com/kulvait/zarr-java) library uses fast ZIP index-based access, avoiding full decompression of the archive when reading individual chunks.
 
-You have two main options:
+## Supported Formats
+
+| Format | Extension | Plugin menu entry | Description |
+|--------|-----------|-------------------|-------------|
+| [DEN](https://kulvait.github.io/KCT_doc/den-format.html) | `.den` | File → Open DEN ... | KCT native raw binary format, little-endian, multi-type |
+| Zarr | directory or `.zip` | File → Open ZAR ... | Zarr v2/v3 stores, on-disk directory or zipped |
+
+All formats are accessible via **drag and drop** (see below).
+
+Saving back to DEN is also supported via **File → Save DEN ...**.
+
+## Architecture
+
+### Zarr reading pipeline
+
+Array reading follows a two-stage fallback strategy:
+
+1. **zarr-java** (pure Java) — the primary path. If the codec used by the Zarr array is supported natively by zarr-java, data is decoded entirely in Java. For zipped Zarr stores, zarr-java uses fast ZIP index-based chunk access, giving good read performance without extracting the full archive.
+2. **JEP Bridge** (Python fallback) — if zarr-java can parse the array metadata (`LenientMetadata.ArrayInfo`) but cannot decode the data (e.g., the codec is provided by Python's [imagecodecs](https://github.com/cgohlke/imagecodecs) library), the `JEPBridge` is invoked. It calls CPython via [JEP](https://github.com/ninia/jep) in a dedicated single worker thread and returns the decoded slice as raw bytes to Java. This makes it possible to open Zarr arrays compressed with **any codec supported by imagecodecs** — including `zfp`, `blosc2`, `lz4`, `jpeg2000`, `bz2`, `lzma`, and many more — without requiring a native Java codec implementation.
+
+### Key classes
+
+| Class | Description |
+|-------|-------------|
+| `ZarFileOpener` | ImageJ `PlugIn` entry point for Zarr/ZAR files |
+| `DenFileOpener` | ImageJ `PlugIn` entry point for DEN files |
+| `DatFileOpener` | ImageJ `PlugIn` entry point for DAT files |
+| `ZarFileInfo` | Detects whether a path is a valid Zarr store (directory or ZIP) |
+| `ZarrFactory` | Opens a Zarr store handle; builds the node tree; owns the static `JEPBridge` instance |
+| `ZarrNode` / `ZarrArrayNode` / `ZarrGroupNode` | In-memory tree model of the Zarr hierarchy |
+| `ZarOpenerAccessory` | JFileChooser panel showing a live JTree preview of the Zarr array hierarchy |
+| `JEPBridge` | Singleton bridge to CPython via JEP; all Python calls run on a single dedicated daemon thread |
+
+## JEP Bridge — Python Fallback for imagecodecs
+
+### When is it used?
+
+The JEP bridge activates automatically when zarr-java encounters an array whose codec it cannot decode natively. No manual configuration is required to try it; however, **a Python environment must be prepared in advance**.
+
+Thanks to the JEP bridge, this plugin can open **any Zarr array whose codec is supported by [imagecodecs](https://github.com/cgohlke/imagecodecs)**, which covers a very wide range of scientific and general-purpose compression formats.
+
+### Setting up the Python environment
+
+To use the JEP bridge, you need to have Python installed with the `imagecodecs` library. You can set up a Python environment as follows:
+```bash
+export ENV=/<PATH_TO_ENV>/minizarr
+export FIJI_HOME=~/.imagej
+export JAVA_HOME=<PATH_TO_TREMULIN>/jdk-21
+export PATH=$JAVA_HOME/bin:$ENV/bin:$PATH
+export LD_LIBRARY_PATH=$ENV/lib:$LD_LIBRARY_PATH
+module load mamba
+mamba create --prefix $ENV --no-default-packages --copy
+mamba activate $ENV
+mamba install -c conda-forge setuptools numpy imagecodecs zarr
+
+git clone https://github.com/ninia/jep/
+
+cd jep
+python setup.py build
+python setup.py install
+
+cp jep/build/java/jep-4.3.1.jar $FIJI_HOME/jars
+```
+
+## Compiling KCT File Opener using maven
 
 **Clone from GitHub and build yourself** (recommended if you want the latest development version):
 ```bash
 git clone git@github.com:kulvait/KCT_file_opener.git
-cd KCT_zar_file_opener
+cd KCT_file_opener
 ```
 
 Install maven and Java 17, then for non shaded version run:
@@ -36,15 +101,15 @@ When there are problems with enforcer plugin, run:
 mvn clean package -Denforcer.skip=true
 ```
 
-For fat jar with all dependencies included run:
+Copy jar file from target directory to ~/.imagej/plugins and jars from dependency-jars to ~/.imagej/jars and restart ImageJ.
+
+When compiling the plugin, make sure to include the JEP dependency in your `pom.xml` and ensure that the JEP native library is accessible at runtime (e.g., by adding it to `LD_LIBRARY_PATH`).
+
+For fat jar with all dependencies included run, not tested yet due to array of depencencies of `zarr-java`:
 
 ```bash
 mvn clean package -Pfat-jar
 ```
-
-**Download a pre-built release JAR from the GitHub Releases page** (recommended for most users):
-
-Copy jar file from target directory to ~/.imagej/plugins and restart ImageJ. And if it is slim version, also copy all dependency jars from dependency-jars to ~/.imagej/jars.
 
 Code formating
 ```bash
@@ -57,25 +122,30 @@ Java Runtime
 Some clusters might not have a Java runtime installed.  
 This project was **built and tested with Java 17 (Temurin)**:
 
-Download via [Adoptium](https://adoptium.net/temurin/releases/?version=17) or via package manager:
+Download via [Adoptium](https://adoptium.net/temurin/releases/?version=21) or via package manager:
 
 ```bash
-apt-get install temurin-17-jre
+apt-get install temurin-21-jre
 ```
 
-Tested with [Java 17 temurin](https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.9%2B9/OpenJDK17U-debugimage_x64_linux_hotspot_17.0.9_9.tar.gz).
+It shall work with [Java 17 temurin](https://github.com/adoptium/temurin17-binaries) or [Java 21 temurin](https://github.com/adoptium/temurin21-binaries), but it is not guaranteed to work with older Java versions. 
 
 ## Drag and drop
 
-I have developped a simple drag and drop via providing custom HandleExtraFileTypes.
+A custom `HandleExtraFileTypes` implementation provides drag-and-drop support for all three formats.
 
-It might conflict with other plugins providing the same functionality, namely in recent Fiji update it conflicted with IO plugin. As the plugin priority is by name alphabetically, you can rename the jar file to something starting with A to have it loaded first or rename IO plugin to something starting with Z to have it loaded last.
+It might conflict with other plugins providing the same functionality — notably, in recent Fiji updates it has conflicted with the IO plugin. Because plugin priority is determined alphabetically by name, you can rename the JAR file to change its precedence.
 
-To find conflicting plugins just search for "Find Jar For Class" and then type "HandleExtraFileTypes" to see all plugins providing this functionality. There might be other ways how to provide drag and drop functionality, e.g. via SCIFIO, but I have not explored them yet, see [this discussion](https://imagej.nih.narkive.com/QUoWdvgX/handle-extra-files-types-not-working).
+To find conflicting plugins, use **Plugins → Utilities → Find Jar For Class** and search for `HandleExtraFileTypes` to see all plugins providing this functionality. In the future, I may explore alternative approaches to providing drag-and-drop support, such as via SCIFIO, but I have not yet investigated those options (see [this discussion](https://imagej.nih.narkive.com/QUoWdvgX/handle-extra-files-types-not-working)). I also opened issue to improve [drag-and-drop support in ImageJ](https://github.com/fiji/fiji/issues/428).
+
 
 ## Dependencies
 
-Dependencies may have their own licenses, namely [zarr-java](https://github.com/zarr-developers/zarr-java) is licensed under MIT License.
+Dependencies may have their own licenses:
+
+- [zarr-java (kulvait fork)](https://github.com/kulvait/zarr-java) — MIT License
+- [JEP (Java Embedded Python)](https://github.com/ninia/jep) — zlib License
+- [ImageJ](https://imagej.net/) — Public Domain / BSD
 
 ## Licensing
 
