@@ -137,31 +137,56 @@ public class ZarrArrayNode extends ZarrNode {
         switch (numpyDtype) {
             case "<u1":
             case "|u1":
+            case "UINT8":
                 return ucar.ma2.Array.factory(ucar.ma2.DataType.UBYTE, intShape, bytes);
             case "<i1":
             case "|i1":
+            case "INT8":
                 return ucar.ma2.Array.factory(ucar.ma2.DataType.BYTE, intShape, bytes);
-            case "<u2": {
+            case "<u2":
+            case "UINT16": {
                 short[] a = new short[bytes.length / 2];
                 bb.asShortBuffer().get(a);
                 return ucar.ma2.Array.factory(ucar.ma2.DataType.USHORT, intShape, a);
             }
-            case "<i2": {
+            case "<i2":
+            case "INT16": {
                 short[] a = new short[bytes.length / 2];
                 bb.asShortBuffer().get(a);
                 return ucar.ma2.Array.factory(ucar.ma2.DataType.SHORT, intShape, a);
             }
-            case "<i4": {
+            case "<i4":
+            case "INT32": {
                 int[] a = new int[bytes.length / 4];
                 bb.asIntBuffer().get(a);
                 return ucar.ma2.Array.factory(ucar.ma2.DataType.INT, intShape, a);
             }
-            case "<f4": {
+            case "<u4":
+            case "UINT32": {
+                int[] a = new int[bytes.length / 4];
+                bb.asIntBuffer().get(a);
+                return ucar.ma2.Array.factory(ucar.ma2.DataType.UINT, intShape, a);
+            }
+            case "<i8":
+            case "INT64": {
+                long[] a = new long[bytes.length / 8];
+                bb.asLongBuffer().get(a);
+                return ucar.ma2.Array.factory(ucar.ma2.DataType.LONG, intShape, a);
+            }
+            case "<u8":
+            case "UINT64": {
+                long[] a = new long[bytes.length / 8];
+                bb.asLongBuffer().get(a);
+                return ucar.ma2.Array.factory(ucar.ma2.DataType.ULONG, intShape, a);
+            }
+            case "<f4":
+            case "FLOAT32": {
                 float[] a = new float[bytes.length / 4];
                 bb.asFloatBuffer().get(a);
                 return ucar.ma2.Array.factory(ucar.ma2.DataType.FLOAT, intShape, a);
             }
-            case "<f8": {
+            case "<f8":
+            case "FLOAT64": {
                 double[] a = new double[bytes.length / 8];
                 bb.asDoubleBuffer().get(a);
                 return ucar.ma2.Array.factory(ucar.ma2.DataType.DOUBLE, intShape, a);
