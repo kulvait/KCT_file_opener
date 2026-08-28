@@ -281,7 +281,7 @@ public class ZarVirtualStack extends ImageStack {
 
     public String getSliceLabel(int n) {
         //return String.format("z=%d/%d", n - 1, (int) dimz);
-        return String.format("z=%d/%d", n - 1);
+        return String.format("z=%d", n - 1);
     }
 
     public boolean isVirtual() {

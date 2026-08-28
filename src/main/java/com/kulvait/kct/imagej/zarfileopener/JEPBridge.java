@@ -186,23 +186,40 @@ public class JEPBridge implements AutoCloseable {
         });
     }
 
-    private void updateInterpreter(String storePath, boolean isZip, String[] zarrPath) throws Exception {
-        this.storePath = storePath;
+    // Update the interpreter state if the storePath, isZip, or zarrPath have changed.
+    // storePath can be null or empty, in which case we keep the existing storePath.
+    public void updateInterpreter(String storePath, boolean isZip, String[] zarrPath) throws Exception {
+        if (storePath.equals(this.storePath) && isZip == this.isZip && java.util.Arrays.equals(zarrPath,
+                this.zarrPath)) {
+            return; // No change, no need to update
+        }
+        if (storePath == null || storePath.isEmpty()) {
+            if (isZip == this.isZip && java.util.Arrays.equals(zarrPath, this.zarrPath)) {
+                return; // No change, no need to update
+            }
+        } else {
+            this.storePath = storePath;
+        }
         this.isZip = isZip;
         this.zarrPath = zarrPath;
+        logger.info(
+                "Updating JEP zarr bridge interpreter storePath=" + storePath + " isZip=" + isZip + " zarrPath=" + String.join(
+                        "/", zarrPath));
         submit(() -> {
-            if (isZip) {
-                String cmd = "store = zarr.storage.ZipStore(\"%s\", mode=\"r\")".formatted(storePath);
-                interp.exec(cmd);
-            } else {
-                String cmd = "store = \"%s\"".formatted(storePath);
-                interp.exec(cmd);
+            if (storePath != null && !storePath.isEmpty()) {
+                if (this.isZip) {
+                    String cmd = "store = zarr.storage.ZipStore(\"%s\", mode=\"r\")".formatted(this.storePath);
+                    interp.exec(cmd);
+                } else {
+                    String cmd = "store = \"%s\"".formatted(storePath);
+                    interp.exec(cmd);
+                }
             }
-            if (zarrPath == null || zarrPath.length == 0) {
+            if (this.zarrPath == null || this.zarrPath.length == 0) {
                 String cmd = "array = zarr.open_array(store=store, mode='r')";
                 interp.exec(cmd);
             } else {
-                String zarrPathStr = String.join("/", zarrPath);
+                String zarrPathStr = String.join("/", this.zarrPath);
                 String cmd1 = "g = zarr.open_group(store=store, mode='r')";
                 String cmd2 = "array = g['%s']".formatted(zarrPathStr);
                 interp.exec(cmd1);
