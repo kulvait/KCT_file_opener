@@ -21,6 +21,15 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import javax.swing.JFileChooser;
+import javax.swing.TransferHandler;
+import javax.swing.JList;
+import javax.swing.JTable;
+import javax.swing.JComponent;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.UnsupportedFlavorException;
+import com.kulvait.kct.imagej.FileOpenerDirectory;
 // Java NIO imports for file handling
 import java.nio.file.Path;
 import java.nio.file.Files;
@@ -54,7 +63,7 @@ import com.kulvait.kct.imagej.denfileopener.DenVirtualStack;
 public class ZarFileOpener implements PlugIn {
     private static final Logger logger = Logger.getLogger(ZarFileOpener.class.getName());
 
-    static private String directory;
+    private String directory;
     private File file;
     private ZarOpenerAccessory zarAccessory = null;
 
@@ -88,20 +97,20 @@ public class ZarFileOpener implements PlugIn {
 
         logger.info("Logger initialized at FINE level");
         try {
-            String[] path = null; // Placeholder for potential path argument parsing
+            String[] zarrPath = new String[0]; // Default to root path
             boolean useVirtualStack;
             if (arg.equals("")) {
                 if (openFilesDialog() == false) {
                     return;
                 }
                 useVirtualStack = zarAccessory.isBoxSelected();
-                path = zarAccessory.getSelectedZarrPath();
+                zarrPath = zarAccessory.getSelectedZarrPath();
             } else {
                 file = new File(arg);
-                directory = file.getParent() + File.separator;
+                directory = file.getAbsoluteFile().getParent() + File.separator;
                 useVirtualStack = true;
             }
-            openZar(path, useVirtualStack);
+            openZar(zarrPath, useVirtualStack);
         } catch (IOException e) {
             System.out.printf("%s ERROR", e.toString());
         }
@@ -111,8 +120,7 @@ public class ZarFileOpener implements PlugIn {
         if (file == null || !file.exists()) {
             return false;
         }
-        DenFileInfo inf = new DenFileInfo(file);
-        if (inf.isValidDEN()) {
+        if (file.isFile() && new DenFileInfo(file).isValidDEN()) {
             return true;
         }
 //Zarr store check is more expensive, so we only do it if the DEN check fails
@@ -120,8 +128,7 @@ public class ZarFileOpener implements PlugIn {
         //Test if the object was created in ZarOpenerAccessory to reuse resources
         if (zarAccessory != null) {
             zarInf = zarAccessory.getSelectedZarrFileInfo();
-            File zarFile = zarInf.getFile();
-            if (!zarFile.equals(file)) {
+            if (zarInf == null || !zarInf.getFile().equals(file)) {
                 zarInf = new ZarFileInfo(file);
             }
         } else {
@@ -131,6 +138,11 @@ public class ZarFileOpener implements PlugIn {
     }
 
     public boolean openFilesDialog() {
+        return openFilesDialog(null);
+    }
+
+    private boolean openFilesDialog(File initialFile) {
+        file = null;
         try {
             EventQueue.invokeAndWait(new Runnable() {
 
@@ -151,32 +163,23 @@ public class ZarFileOpener implements PlugIn {
                         }
                     };
                     fc.setDialogTitle("Open Zarr/DEN file ...");
-                    //This might crash accessory not implemented!
                     fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
                     zarAccessory = new ZarOpenerAccessory(fc);
                     fc.setAccessory(zarAccessory);
                     fc.setMultiSelectionEnabled(false);
-                    if (directory == null) {
-                        directory = Prefs.getString(".options.denlastdir");
+                    File lastDirectory = FileOpenerDirectory.getLastDirectory();
+                    if (lastDirectory != null) {
+                        fc.setCurrentDirectory(lastDirectory);
                     }
-                    if (directory == null) {
-                        directory = OpenDialog.getLastDirectory();
-                    }
-                    if (directory == null) {
-                        directory = OpenDialog.getDefaultDirectory();
-                    }
-                    if (directory != null) {
-                        fc.setCurrentDirectory(new File(directory));
-                        System.out.println(String.format("Directory is %s", directory));
-                    } else {
-                        System.out.println("Directory is null");
+                    installFileDropHandler(fc);
+                    if (initialFile != null) {
+                        selectFile(fc, initialFile);
                     }
                     int returnVal = fc.showOpenDialog(IJ.getInstance());
                     if (returnVal != JFileChooser.APPROVE_OPTION) {
                         return;
                     }
                     file = fc.getSelectedFile();
-                    //zarAccessory = (CheckBoxAccessory) fc.getAccessory();
                     directory = fc.getCurrentDirectory().getPath() + File.separator;
                 }
             });
@@ -192,6 +195,63 @@ public class ZarFileOpener implements PlugIn {
         return true;
     }
 
+    private void selectFile(JFileChooser chooser, File selectedFile) {
+        File absoluteFile = selectedFile.getAbsoluteFile();
+        chooser.setCurrentDirectory(absoluteFile.getParentFile());
+        chooser.setSelectedFile(absoluteFile);
+    }
+
+    private void installFileDropHandler(JFileChooser chooser) {
+        TransferHandler handler = new TransferHandler() {
+            @Override
+            public boolean canImport(TransferSupport support) {
+                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+            }
+
+            @Override
+            public boolean importData(TransferSupport support) {
+                if (!canImport(support)) {
+                    return false;
+                }
+                try {
+                    Object transferred = support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+                    if (!(transferred instanceof List<?> files) || files.size() != 1 || !(files.get(
+                            0) instanceof File droppedFile)) {
+                        IJ.error("Open Zarr/DEN", "Drop one file or directory at a time.");
+                        return false;
+                    }
+                    if (isDENFileOrZarrStore(droppedFile)) {
+                        selectFile(chooser, droppedFile);
+                    } else if (droppedFile.isDirectory()) {
+                        chooser.setSelectedFile(null);
+                        chooser.setCurrentDirectory(droppedFile);
+                    } else {
+                        IJ.error("Open Zarr/DEN", "Not a valid Zarr store or DEN file: " + droppedFile);
+                        return false;
+                    }
+                    return true;
+                } catch (IOException | UnsupportedFlavorException e) {
+                    logger.log(Level.WARNING, "Cannot read dropped files", e);
+                    IJ.error("Open Zarr/DEN", "Cannot read dropped files: " + e.getMessage());
+                    return false;
+                }
+            }
+        };
+        chooser.setTransferHandler(handler);
+        installListDropHandler(chooser, handler);
+    }
+
+    private void installListDropHandler(Container container, TransferHandler handler) {
+        for (Component component : container.getComponents()) {
+            if (component instanceof JList || component instanceof JTable) {
+                ((JComponent) component).setTransferHandler(handler);
+            }
+            if (component instanceof Container child) {
+                installListDropHandler(child, handler);
+            }
+        }
+    }
+
     private void openZar(String[] path, boolean useVirtualStack) throws IOException {
         if (path == null) {
             logger.log(Level.WARNING, "Path is null, defaulting to root");
@@ -202,8 +262,7 @@ public class ZarFileOpener implements PlugIn {
         //Test if the object was created in ZarOpenerAccessory to reuse resources
         if (zarAccessory != null) {
             zarInf = zarAccessory.getSelectedZarrFileInfo();
-            File zarFile = zarInf.getFile();
-            if (!zarFile.equals(file)) {
+            if (zarInf == null || !zarInf.getFile().equals(file)) {
                 zarInf = new ZarFileInfo(file);
             }
         } else {
@@ -211,6 +270,7 @@ public class ZarFileOpener implements PlugIn {
         }
         ImagePlus img;
         if (zarInf.isValidZarr()) {
+            directory = FileOpenerDirectory.remember(file);
             ZarrNode node = zarInf.getRootNode().getDescendant(path);
             if (node != null && node.getType() == ZarrNodeType.ARRAY) {
                 logger.log(Level.INFO, String.format("Opening Zarr array %s:%s", file.getName(), zarrPath));
@@ -238,7 +298,10 @@ public class ZarFileOpener implements PlugIn {
                 String msg = String.format("Path %s in %s is not a Zarr array, cannot open as image.", "/" + "".join(
                         "/", path), file.getName());
                 logger.log(Level.SEVERE, msg);
-                openFilesDialog();
+                File selectedStore = file;
+                if (!openFilesDialog(selectedStore)) {
+                    return;
+                }
                 useVirtualStack = zarAccessory.isBoxSelected();
                 path = zarAccessory.getSelectedZarrPath();
                 openZar(path, useVirtualStack);
@@ -248,11 +311,7 @@ public class ZarFileOpener implements PlugIn {
             if (!inf.isValidDEN()) {
                 throw new RuntimeException(String.format("File %s is not valid DEN!", file.getName()));
             } else {
-                OpenDialog.setLastDirectory(directory);
-                Prefs.set("options.denlastdir", directory);
-                Prefs.savePreferences();
-                System.out.println(
-                        String.format("Storing directory %s.", Prefs.getString(".options.denlastdir")));
+                directory = FileOpenerDirectory.remember(file);
             }
             FileInfo fi = new FileInfo();
             fi.fileFormat = FileInfo.RAW;

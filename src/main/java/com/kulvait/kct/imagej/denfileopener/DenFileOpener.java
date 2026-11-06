@@ -11,16 +11,15 @@ package com.kulvait.kct.imagej.denfileopener;
 
 import ij.IJ;
 import ij.ImagePlus;
-import ij.Prefs;
 import ij.io.FileInfo;
 import ij.io.FileOpener;
-import ij.io.OpenDialog;
 import ij.plugin.PlugIn;
 import java.awt.EventQueue;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import javax.swing.JFileChooser;
+import com.kulvait.kct.imagej.FileOpenerDirectory;
 
 /**
  * Uses the JFileChooser from Swing to open one or more raw images. The "Open
@@ -28,7 +27,7 @@ import javax.swing.JFileChooser;
  */
 public class DenFileOpener implements PlugIn {
 
-    static private String directory;
+    private String directory;
     private File file;
     private CheckBoxAccessory cba;
 
@@ -51,6 +50,8 @@ public class DenFileOpener implements PlugIn {
     }
 
     public boolean openFilesDialog() {
+        file = null;
+        cba = null;
         try {
             EventQueue.invokeAndWait(new Runnable() {
 
@@ -59,20 +60,9 @@ public class DenFileOpener implements PlugIn {
                     fc.setDialogTitle("Open DEN file...");
                     fc.setAccessory(new CheckBoxAccessory(fc));
                     fc.setMultiSelectionEnabled(false);
-                    if (directory == null) {
-                        directory = Prefs.getString(".options.denlastdir");
-                    }
-                    if (directory == null) {
-                        directory = OpenDialog.getLastDirectory();
-                    }
-                    if (directory == null) {
-                        directory = OpenDialog.getDefaultDirectory();
-                    }
-                    if (directory != null) {
-                        fc.setCurrentDirectory(new File(directory));
-                        System.out.println(String.format("Directory is %s", directory));
-                    } else {
-                        System.out.println("Directory is null");
+                    File lastDirectory = FileOpenerDirectory.getLastDirectory();
+                    if (lastDirectory != null) {
+                        fc.setCurrentDirectory(lastDirectory);
                     }
                     int returnVal = fc.showOpenDialog(IJ.getInstance());
                     if (returnVal != JFileChooser.APPROVE_OPTION) {
@@ -100,11 +90,7 @@ public class DenFileOpener implements PlugIn {
         if (!inf.isValidDEN()) {
             throw new RuntimeException(String.format("File %s is not valid DEN!", file.getName()));
         } else {
-            OpenDialog.setLastDirectory(directory);
-            Prefs.set("options.denlastdir", directory);
-            Prefs.savePreferences();
-            System.out.println(String.format("Storing directory %s.", Prefs.getString(
-                    ".options.denlastdir")));
+            directory = FileOpenerDirectory.remember(file);
         }
         FileInfo fi = new FileInfo();
         fi.fileFormat = FileInfo.RAW;
@@ -147,3 +133,4 @@ public class DenFileOpener implements PlugIn {
         }
     }
 }
+

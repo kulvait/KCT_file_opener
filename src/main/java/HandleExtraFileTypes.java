@@ -1,4 +1,3 @@
-
 /*-
  * #%L
  * IO plugin for Fiji.
@@ -124,6 +123,11 @@ public class HandleExtraFileTypes extends ImagePlus implements PlugIn {
     }
 
     private Object tryOpen(final String directory, String name, final String path) {
+        File droppedDirectory = new File(path);
+        if (droppedDirectory.isDirectory() && (new File(droppedDirectory, ".zgroup").isFile() || new File(droppedDirectory, ".zarray").isFile() || new File(droppedDirectory, "zarr.json").isFile())) {
+            width = PLUGIN_NOT_FOUND;
+            return tryPlugIn("com.kulvait.kct.imagej.zarfileopener.ZarFileOpener", path);
+        }
         // set up a stream to read in 132 bytes from the file header
         // These can be checked for "magic" values which are diagnostic
         // of some image types
