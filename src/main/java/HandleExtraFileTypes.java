@@ -24,6 +24,7 @@ import ij.ImagePlus;
 import ij.ImageStack;
 import ij.Menus;
 import ij.plugin.PlugIn;
+import com.kulvait.kct.imagej.zarfileopener.ZarrPathSpec;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -123,8 +124,15 @@ public class HandleExtraFileTypes extends ImagePlus implements PlugIn {
     }
 
     private Object tryOpen(final String directory, String name, final String path) {
+        if (ZarrPathSpec.parse(path) != null) {
+            width = PLUGIN_NOT_FOUND;
+            return tryPlugIn("com.kulvait.kct.imagej.zarfileopener.ZarFileOpener", path);
+        }
         File droppedDirectory = new File(path);
-        if (droppedDirectory.isDirectory() && (new File(droppedDirectory, ".zgroup").isFile() || new File(droppedDirectory, ".zarray").isFile() || new File(droppedDirectory, "zarr.json").isFile())) {
+        if (droppedDirectory.isDirectory()
+                && (new File(droppedDirectory, ".zgroup").isFile()
+                        || new File(droppedDirectory, ".zarray").isFile()
+                        || new File(droppedDirectory, "zarr.json").isFile())) {
             width = PLUGIN_NOT_FOUND;
             return tryPlugIn("com.kulvait.kct.imagej.zarfileopener.ZarFileOpener", path);
         }

@@ -42,8 +42,6 @@ import com.kulvait.logging.LineNumberFormatter;
 import com.kulvait.logging.Logging;
 import java.util.logging.Logger;
 import java.util.logging.Level;
-import java.util.logging.Handler;
-import java.util.logging.ConsoleHandler;
 // Zarr Java library imports
 import dev.zarr.zarrjava.core.Array;
 import dev.zarr.zarrjava.core.ArrayMetadata;
@@ -81,13 +79,20 @@ public class ZarFileOpener implements PlugIn {
                 useVirtualStack = zarAccessory.isBoxSelected();
                 zarrPath = zarAccessory.getSelectedZarrPath();
             } else {
-                file = new File(arg);
+                ZarrPathSpec pathSpec = ZarrPathSpec.parse(arg);
+                if (pathSpec != null) {
+                    file = pathSpec.getStoreFile();
+                    zarrPath = pathSpec.getArrayPath();
+                } else {
+                    file = new File(arg);
+                }
                 directory = file.getAbsoluteFile().getParent() + File.separator;
                 useVirtualStack = true;
             }
             openZar(zarrPath, useVirtualStack);
         } catch (IOException e) {
-            System.out.printf("%s ERROR", e.toString());
+            logger.log(Level.SEVERE, "Cannot open " + (file == null ? "selected file" : file.getAbsolutePath()), e);
+            IJ.error("Open Zarr/DEN", "Cannot open file: " + e.getMessage());
         }
     }
 
@@ -95,7 +100,7 @@ public class ZarFileOpener implements PlugIn {
         if (file == null || !file.exists()) {
             return false;
         }
-        if (file.isFile() && new DenFileInfo(file).isValidDEN()) {
+        if (file.isFile() && new DenFileInfo(file, false).isValidDEN()) {
             return true;
         }
 //Zarr store check is more expensive, so we only do it if the DEN check fails
@@ -159,9 +164,10 @@ public class ZarFileOpener implements PlugIn {
                 }
             });
         } catch (InterruptedException e) {
-            System.out.printf("%s ERROR", e.toString());
+            Thread.currentThread().interrupt();
+            logger.log(Level.WARNING, "Open dialog was interrupted", e);
         } catch (InvocationTargetException e) {
-            System.out.printf("%s ERROR", e.toString());
+            logger.log(Level.SEVERE, "Open dialog failed", e.getCause());
         }
         if (zarAccessory == null || file == null) {
             file = null;
@@ -190,8 +196,8 @@ public class ZarFileOpener implements PlugIn {
                 }
                 try {
                     Object transferred = support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
-                    if (!(transferred instanceof List<?> files) || files.size() != 1 || !(files.get(
-                            0) instanceof File droppedFile)) {
+                    if (!(transferred instanceof List<?> files) || files.size() != 1
+                            || !(files.get(0) instanceof File droppedFile)) {
                         IJ.error("Open Zarr/DEN", "Drop one file or directory at a time.");
                         return false;
                     }
@@ -227,12 +233,12 @@ public class ZarFileOpener implements PlugIn {
         }
     }
 
-    private void openZar(String[] zarrPathArray, boolean useVirtualStack) throws IOException {
-        if (zarrPathArray == null) {
-            logger.log(Level.WARNING, "Path is null, defaulting to root");
-            zarrPathArray = new String[0];
+    private void openZar(String[] zarrPath, boolean useVirtualStack) throws IOException {
+        if (zarrPath == null) {
+            logger.log(Level.WARNING, "No Zarr path selected, using store root.");
+            zarrPath = new String[0];
         }
-        String zarrPath = "/" + String.join("/", zarrPathArray);
+        String zarrPathString = "/" + String.join("/", zarrPath);
         ZarFileInfo zarInf;
         //Test if the object was created in ZarOpenerAccessory to reuse resources
         if (zarAccessory != null) {
@@ -246,23 +252,23 @@ public class ZarFileOpener implements PlugIn {
         ImagePlus img;
         if (zarInf.isValidZarr()) {
             directory = FileOpenerDirectory.remember(file);
-            ZarrNode node = zarInf.getRootNode().getDescendant(zarrPathArray);
+            ZarrNode node = zarInf.getRootNode().getDescendant(zarrPath);
             String filePath = file.toPath().toRealPath().toString();
             String zarrNodePath = filePath + ":" + zarrPath;
             if (node != null && node.getType() == ZarrNodeType.ARRAY) {
-                logger.log(Level.INFO, String.format("Opening Zarr array %s:%s", file.getName(), zarrPath));
                 ZarrArrayNode arrayNode = (ZarrArrayNode) node;
                 long[] shape = arrayNode.getShape();
                 int[] chunkShape = arrayNode.getChunkShape();
                 DataType dtype = arrayNode.getDataType();
+                logger.log(Level.INFO, String.format(
+                        "Opening Zarr array %s with shape %s, chunk shape %s, and data type %s",
+                        zarrNodePath, Arrays.toString(shape), Arrays.toString(chunkShape), dtype));
                 if (shape.length > 3) {
-                    String msg = String.format("Array %s has shape %s, which has more than 3 dimensions!", zarrNodePath,
-                            Arrays.toString(shape));
-                    logger.log(Level.SEVERE, msg);
+                    logger.log(Level.SEVERE, "Array has more than 3 dimensions.");
                 }
-                ZarVirtualStack vstack = new ZarVirtualStack(zarInf, zarrPathArray);
+                ZarVirtualStack vstack = new ZarVirtualStack(zarInf, zarrPath);
                 int frameCount = vstack.getFrameCount();
-                img = new ImagePlus(file.getName() + zarrPath, vstack);
+                img = new ImagePlus(file.getName() + zarrPathString, vstack);
                 if (img != null) {
                     if (IJ.getVersion().compareTo("1.50e") >= 0)
                         img.setIJMenuBar(true);
@@ -271,7 +277,9 @@ public class ZarFileOpener implements PlugIn {
                     img.updateAndDraw();
                 }
             } else {
-                String msg = String.format("%s is Zarr %s node, cannot open as image. Use the dialog to select Zarr array to open.", zarrNodePath,
+                String msg = String.format(
+                        "%s is Zarr %s node, cannot open as image. Use the dialog to select Zarr array to open.",
+                        zarrNodePath,
                         node != null ? node.getType() : "null");
                 logger.log(Level.SEVERE, msg);
                 File selectedStore = file;
@@ -279,8 +287,8 @@ public class ZarFileOpener implements PlugIn {
                     return;
                 }
                 useVirtualStack = zarAccessory.isBoxSelected();
-                zarrPathArray = zarAccessory.getSelectedZarrPath();
-                openZar(zarrPathArray, useVirtualStack);
+                zarrPath = zarAccessory.getSelectedZarrPath();
+                openZar(zarrPath, useVirtualStack);
             }
         } else {
             DenFileInfo inf = new DenFileInfo(file);
