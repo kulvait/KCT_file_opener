@@ -10,13 +10,13 @@
  </parent>
  <groupId>com.kulvait.kct</groupId>
  <artifactId>KCT_file_opener</artifactId>
- <version>2.0.0</version>
+ <version>2.1.0</version>
  <name>KCT File Opener</name>
  <description>ImageJ plugin to open files used within KCT project</description>
  <url>https://github.com/kulvait/KCT_file_opener</url>
  <inceptionYear>2026</inceptionYear>
  <organization>
-  <name>Vojtech Kulvait</name>
+  <name>Vojtěch Kulvait</name>
   <url>kulvait.com</url>
  </organization>
  <licenses>
@@ -27,7 +27,7 @@
  <developers>
   <developer>
    <id>kulvait</id>
-   <name>Vojt&#x11B;ch Kulvait</name>
+   <name>Vojtěch Kulvait</name>
    <url>https://scholar.google.cz/citations?user=rsOToBIAAAAJ</url>
    <roles>
     <role>lead</role>
@@ -41,7 +41,7 @@
  </developers>
  <contributors>
   <contributor>
-   <name>Vojt&#x11B;ch Kulvait</name>
+  <name>Vojtěch Kulvait</name>
    <url>https://scholar.google.cz/citations?user=rsOToBIAAAAJ</url>
   </contributor>
  </contributors>
@@ -53,7 +53,7 @@
  </scm>
  <mailingLists>
   <mailingList>
-   <name>Dev null</name>
+   <name>dev null</name>
    <archive>/dev/null</archive>
   </mailingList>
  </mailingLists>
