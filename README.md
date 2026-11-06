@@ -27,6 +27,8 @@ All formats are accessible via **drag and drop** (see below).
 
 Saving back to DEN is also supported via **File → Save DEN ...**.
 
+The **Open ZAR ...** chooser uses fixed preview rows for format, type, shape, chunks, virtual-stack mode, and status. Zarr groups display their array hierarchy; select an array to preview its dtype, shape, and chunks. Root-level Zarr arrays show the same metadata and are selected automatically. Zarr currently opens only as a virtual stack, so its checkbox is checked and disabled. For DEN files, the checkbox remains selectable. Each new selection clears the previous preview, including any error message.
+
 ## Architecture
 
 ### Zarr reading pipeline
@@ -35,6 +37,7 @@ Array reading follows a two-stage fallback strategy:
 
 1. **zarr-java** (pure Java) — the primary path. If the codec used by the Zarr array is supported natively by zarr-java, data is decoded entirely in Java. For zipped Zarr stores, zarr-java uses fast ZIP index-based chunk access, giving good read performance without extracting the full archive.
 2. **JEP Bridge** (Python fallback) — if zarr-java can parse the array metadata (`LenientMetadata.ArrayInfo`) but cannot decode the data (e.g., the codec is provided by Python's [imagecodecs](https://github.com/cgohlke/imagecodecs) library), the `JEPBridge` is invoked. It calls CPython via [JEP](https://github.com/ninia/jep) in a dedicated single worker thread and returns the decoded slice as raw bytes to Java. This makes it possible to open Zarr arrays compressed with **any codec supported by imagecodecs** — including `zfp`, `blosc2`, `lz4`, `jpeg2000`, `bz2`, `lzma`, and many more — without requiring a native Java codec implementation.
+
 
 ### Key classes
 

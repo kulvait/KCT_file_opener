@@ -8,208 +8,180 @@
 
 package com.kulvait.kct.imagej.zarfileopener;
 
+import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.File;
+import java.util.Arrays;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
-import javax.swing.JTextArea;
-import javax.swing.JTree;
+import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTree;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
-import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
-import javax.swing.event.TreeSelectionEvent;
-import javax.swing.event.TreeSelectionListener;
 
 import com.kulvait.kct.imagej.denfileopener.DenFileInfo;
 
-import dev.zarr.zarrjava.core.DataType;
-// Logger
-import java.util.logging.Logger;
-import java.util.logging.Level;
-
 public class ZarOpenerAccessory extends JComponent implements PropertyChangeListener {
-    public static final Logger logger = Logger.getLogger(ZarOpenerAccessory.class.getName());
-
     private static final long serialVersionUID = 1L;
-    private TreeSelectionListener currentSelectionListener;
-    private ZarrNode selectedNode = null;
+    private static final String NOT_APPLICABLE = "-";
+    private static final String ZARR_VIRTUAL_STACK_TOOLTIP = "Zarr currently supports virtual stacks only.";
 
-    File selectedFile = null;
-    ZarFileInfo selectedZarrFileInfo = null;
-
-    JLabel nameInfo;
-    JLabel typeInfo;
-    JLabel dimInfo;
-    JLabel noInfo;
-    JLabel debugInfo;
-    JCheckBox virtualCheckBox;
-//Add Jtree and scroll pane for metadata display
-    private JTree arrayTree;
-    private JScrollPane treeScrollPane;
-
-    boolean checkBoxInit = false;
-    int preferredWidth = 250;
-    int preferredHeight = 500; // Mostly ignored as it is
-    int checkBoxPosX = 5;
-    int checkBoxPosY = 20;
-    int checkBoxWidth = preferredWidth;
-    int checkBoxHeight = 20;
+    private final JLabel formatInfo = new JLabel();
+    private final JLabel typeInfo = new JLabel();
+    private final JLabel shapeInfo = new JLabel();
+    private final JLabel chunksInfo = new JLabel();
+    private final JLabel statusInfo = new JLabel();
+    private final JLabel directoryMessage = new JLabel("Not a Zarr directory");
+    private final JCheckBox virtualCheckBox = new JCheckBox("Virtual stack");
+    private final JTree arrayTree = new JTree(emptyTreeModel());
+    private final JScrollPane treeScrollPane = new JScrollPane(arrayTree);
+    private File selectedFile;
+    private ZarFileInfo selectedZarrFileInfo;
+    private ZarrNode selectedNode;
 
     public ZarOpenerAccessory() {
-        setPreferredSize(new Dimension(preferredWidth, preferredHeight));
+        setPreferredSize(new Dimension(360, 500));
         setLayout(new GridBagLayout());
-        // Component initialization
-        nameInfo = new JLabel();
-        typeInfo = new JLabel();
-        dimInfo = new JLabel();
-        debugInfo = new JLabel();
-        noInfo = new JLabel();
-        virtualCheckBox = new JCheckBox("Virtual stack", checkBoxInit);
-        virtualCheckBox.setBounds(checkBoxPosX, checkBoxPosY, checkBoxWidth, checkBoxHeight);
+        addInfoRow("Format:", formatInfo, 0);
+        addInfoRow("Type:", typeInfo, 1);
+        addInfoRow("Shape:", shapeInfo, 2);
+        addInfoRow("Chunks:", chunksInfo, 3);
 
-        JTextArea abc = new JTextArea();
-        abc.setPreferredSize(new Dimension(preferredWidth, preferredHeight));
-        abc.setLineWrap(true);
-        abc.setWrapStyleWord(true);
-        abc.setEditable(false);
-        abc.setText("DEN.");
+        GridBagConstraints constraints = new GridBagConstraints();
+        constraints.gridx = 0;
+        constraints.gridy = 4;
+        constraints.gridwidth = 2;
+        constraints.fill = GridBagConstraints.HORIZONTAL;
+        constraints.insets = new Insets(4, 5, 4, 5);
+        add(virtualCheckBox, constraints);
+        addInfoRow("Status:", statusInfo, 5);
 
-        DefaultMutableTreeNode root = new DefaultMutableTreeNode("Root");
-
-// Level 1
-        DefaultMutableTreeNode fruits = new DefaultMutableTreeNode("Fruits");
-        DefaultMutableTreeNode vegetables = new DefaultMutableTreeNode("Vegetables");
-        DefaultMutableTreeNode mushroom = new DefaultMutableTreeNode("Mushroom");
-
-        root.add(fruits);
-        root.add(vegetables);
-        root.add(mushroom);
-
-// Level 2
-        fruits.add(new DefaultMutableTreeNode("Apple"));
-        fruits.add(new DefaultMutableTreeNode("Banana"));
-        fruits.add(new DefaultMutableTreeNode("Orange"));
-
-        DefaultMutableTreeNode leafy = new DefaultMutableTreeNode("Leafy");
-        DefaultMutableTreeNode rootVeg = new DefaultMutableTreeNode("Root vegetables");
-
-        vegetables.add(leafy);
-        vegetables.add(rootVeg);
-
-// Level 3
-        leafy.add(new DefaultMutableTreeNode("Spinach"));
-        leafy.add(new DefaultMutableTreeNode("Lettuce"));
-
-        rootVeg.add(new DefaultMutableTreeNode("Carrot"));
-        rootVeg.add(new DefaultMutableTreeNode("Potato"));
-
-// Create tree
-        arrayTree = new JTree(root);
         arrayTree.setRootVisible(false);
         arrayTree.setShowsRootHandles(true);
-        treeScrollPane = new JScrollPane(arrayTree);
-        treeScrollPane.setPreferredSize(new Dimension(preferredWidth, 0)); // Height will be adjusted automatically
+        arrayTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+        arrayTree.addTreeSelectionListener(event -> updateTreeSelection());
+        JPanel hierarchyArea = new JPanel(new BorderLayout());
+        hierarchyArea.setOpaque(false);
+        hierarchyArea.setPreferredSize(new Dimension(360, 0));
+        hierarchyArea.add(treeScrollPane, BorderLayout.CENTER);
+        constraints.gridy = 6;
+        constraints.weightx = 1;
+        constraints.weighty = 1;
+        constraints.fill = GridBagConstraints.BOTH;
+        add(hierarchyArea, constraints);
 
-        // Positioning
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        gbc.ipady = 10;
-        // gbc.insets = new Insets(0, 0, 0, 0);
-        // c.gridwidth = GridBagConstraints.REMAINDER;
-        // c.anchor = GridBagConstraints.WEST;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        this.add(nameInfo, gbc);
-        gbc.gridy = 1;
-        gbc.ipady = 0;
-        this.add(typeInfo, gbc);
-        gbc.gridy = 2;
-        this.add(dimInfo, gbc);
-        gbc.gridy = 3;
-        gbc.ipady = 10;
-        this.add(virtualCheckBox, gbc);
-        gbc.gridy = 4;
-        gbc.weighty = 0;
-        this.add(noInfo, gbc);
-        gbc.gridy = 5;
-        gbc.weighty = 0;
-        this.add(debugInfo, gbc);
-        debugInfo.setVisible(false);
-        this.setVisible(false);
-        gbc.gridy = 6;
-        gbc.weighty = 1;
-        gbc.fill = GridBagConstraints.BOTH;
-        gbc.anchor = GridBagConstraints.NORTH;
-        this.add(treeScrollPane, gbc);
+        constraints.gridy = 0;
+        constraints.weighty = 1;
+        constraints.anchor = GridBagConstraints.NORTHWEST;
+        constraints.fill = GridBagConstraints.NONE;
+        add(directoryMessage, constraints);
+        resetPreview();
     }
 
-    public ZarOpenerAccessory(JFileChooser fc) {
+    public ZarOpenerAccessory(JFileChooser chooser) {
         this();
-        fc.addPropertyChangeListener(this);
+        chooser.addPropertyChangeListener(this);
     }
 
-// --- method to create and attach the selection listener
-    private void installTreeSelectionListener(JTree tree) {
-        if (currentSelectionListener != null) {
-            tree.removeTreeSelectionListener(currentSelectionListener);
+    private void addInfoRow(String caption, JLabel value, int row) {
+        GridBagConstraints constraints = new GridBagConstraints();
+        constraints.gridx = 0;
+        constraints.gridy = row;
+        constraints.anchor = GridBagConstraints.WEST;
+        constraints.insets = new Insets(4, 5, 4, 5);
+        add(new JLabel(caption), constraints);
+        constraints.gridx = 1;
+        constraints.weightx = 1;
+        constraints.fill = GridBagConstraints.HORIZONTAL;
+        add(value, constraints);
+    }
+
+    private static DefaultTreeModel emptyTreeModel() {
+        return new DefaultTreeModel(new DefaultMutableTreeNode());
+    }
+
+    private void resetPreview() {
+        for (Component component : getComponents()) {
+            component.setVisible(component != directoryMessage);
         }
+        selectedFile = null;
+        selectedZarrFileInfo = null;
+        selectedNode = null;
+        arrayTree.setModel(emptyTreeModel());
+        treeScrollPane.setVisible(false);
+        setVisible(false);
+        formatInfo.setText(NOT_APPLICABLE);
+        typeInfo.setText(NOT_APPLICABLE);
+        shapeInfo.setText(NOT_APPLICABLE);
+        chunksInfo.setText(NOT_APPLICABLE);
+        virtualCheckBox.setSelected(false);
+        virtualCheckBox.setEnabled(false);
+        virtualCheckBox.setToolTipText(null);
+        statusInfo.setText("Select a Zarr store or DEN file");
+    }
 
-        currentSelectionListener = new TreeSelectionListener() {
-            @Override
-            public void valueChanged(TreeSelectionEvent e) {
-                TreePath path = tree.getSelectionPath();
-                if (path == null) {
-                    selectedNode = null;
-                    return;
-                }
-                DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
-                selectedNode = (ZarrNode) node.getUserObject();
-                if (selectedNode != null) {
-                    // Handle the selection of the node here
-                    ZarrNodeType nodeType = selectedNode.getType();
-                    String nodeInfo = String.format("Selected node: %s, type: %s", selectedNode.getName(), nodeType);
-                    logger.info(nodeInfo);
-                    String nodeName = selectedNode.getName();
-                    if (nodeType == ZarrNodeType.ARRAY) {
+    private void updateTreeSelection() {
+        if (selectedZarrFileInfo == null || !selectedZarrFileInfo.isValidZarr()) {
+            return;
+        }
+        DefaultMutableTreeNode treeNode = (DefaultMutableTreeNode) arrayTree.getLastSelectedPathComponent();
+        selectedNode = treeNode == null ? null : (ZarrNode) treeNode.getUserObject();
+        showZarrNode(selectedNode == null ? selectedZarrFileInfo.getRootNode() : selectedNode);
+    }
 
-                        ZarrArrayNode arrayNode = (ZarrArrayNode) selectedNode;
-                        long[] shape = arrayNode.getShape();
-                        int[] chunkShape = arrayNode.getChunkShape();
-                        DataType dtype = arrayNode.getDataType();
-                        typeInfo.setText(String.format("%s %s, %s", nodeType, nodeName, dtype));
-                        typeInfo.setVisible(true);
-                        String msg = String.format("Node %s: type=%s, shape=%s, chunkShape=%s", arrayNode.getFullPath(),
-                                dtype, java.util.Arrays.toString(shape), java.util.Arrays.toString(chunkShape));
-                        logger.info(msg);
-                        dimInfo.setText("Shape: " + java.util.Arrays.toString(shape));
-                        dimInfo.setVisible(true);
-                        debugInfo.setText("Chunks: " + java.util.Arrays.toString(chunkShape));
-                        debugInfo.setVisible(true);
-                    } else {
-                        typeInfo.setText(String.format("%s %s", nodeName, nodeType));
-                        typeInfo.setVisible(true);
-                        dimInfo.setVisible(false);
-                    }
-                }
-            }
-        };
-        tree.addTreeSelectionListener(currentSelectionListener);
+    private void showZarrNode(ZarrNode node) {
+        shapeInfo.setText(NOT_APPLICABLE);
+        chunksInfo.setText(NOT_APPLICABLE);
+        if (node instanceof ZarrArrayNode arrayNode) {
+            typeInfo.setText("Array - " + arrayNode.getDataType());
+            shapeInfo.setText(Arrays.toString(arrayNode.getShape()));
+            chunksInfo.setText(Arrays.toString(arrayNode.getChunkShape()));
+            statusInfo.setText("Ready to open");
+        } else {
+            typeInfo.setText("Group");
+            statusInfo.setText("Select an array");
+        }
+    }
+
+    private void showZarrPreview() {
+        formatInfo.setText(selectedZarrFileInfo.isZipZarr() ? "Zarr ZIP" : "Zarr folder");
+        virtualCheckBox.setSelected(true);
+        virtualCheckBox.setToolTipText(ZARR_VIRTUAL_STACK_TOOLTIP);
+        ZarrNode root = selectedZarrFileInfo.getRootNode();
+        if (selectedZarrFileInfo.isTopLevelArray()) {
+            selectedNode = root;
+        } else {
+            arrayTree.setModel(new DefaultTreeModel(selectedZarrFileInfo.getJTreeRootNode()));
+            treeScrollPane.setVisible(true);
+        }
+        showZarrNode(root);
+    }
+
+    private void showDenPreview(DenFileInfo info) {
+        formatInfo.setText(info.isExtendedDEN() ? "DEN extended" : "DEN legacy");
+        typeInfo.setText(info.getElementType().name());
+        long[] shape = new long[info.getDIMCOUNT()];
+        for (int i = 0; i < shape.length; i++) {
+            shape[i] = info.getDim(i);
+        }
+        shapeInfo.setText(Arrays.toString(shape));
+        virtualCheckBox.setEnabled(true);
+        virtualCheckBox.setSelected(info.getElementCount() >= 32768);
+        statusInfo.setText("Ready to open");
     }
 
     public String[] getSelectedZarrPath() {
-        if (selectedNode == null) {
-            return null;
-        }
-        return selectedNode.getZarrPath();
+        return selectedNode == null ? null : selectedNode.getZarrPath();
     }
 
     public File getSelectedFile() {
@@ -224,112 +196,38 @@ public class ZarOpenerAccessory extends JComponent implements PropertyChangeList
         return virtualCheckBox.isSelected();
     }
 
-    public void propertyChange(PropertyChangeEvent e) {
-        boolean update = false;
-        String prop = e.getPropertyName();
-
-        // If the directory changed, don't show a preview
-        if (JFileChooser.DIRECTORY_CHANGED_PROPERTY.equals(prop)) {
-            selectedFile = null;
-            selectedZarrFileInfo = null;
-            nameInfo.setText("N/A");
-            this.setVisible(false);
-            update = true;
-            // If a file became selected, find out which one.
-        } else if (JFileChooser.SELECTED_FILE_CHANGED_PROPERTY.equals(prop)) {
-            this.setVisible(true);
-            selectedFile = (File) e.getNewValue();
-            if (selectedFile != null) {
-                updateInfo(selectedFile);
-                update = true;
-            } else {
-                this.setVisible(false);
-            }
-        } else {
-            // JOptionPane.showMessageDialog(null, String.format("property=%s",
-            // prop));
-        }
-
-        // Update the preview accordingly.
-        if (update && isShowing()) {
-            repaint();
+    @Override
+    public void propertyChange(PropertyChangeEvent event) {
+        String property = event.getPropertyName();
+        if (JFileChooser.DIRECTORY_CHANGED_PROPERTY.equals(property)) {
+            updateInfo(null);
+        } else if (JFileChooser.SELECTED_FILE_CHANGED_PROPERTY.equals(property)) {
+            updateInfo((File) event.getNewValue());
         }
     }
 
-    public void updateInfo(File f) {
-        selectedZarrFileInfo = new ZarFileInfo(f);
-        if (selectedZarrFileInfo.isValidZarr()) {
-            nameInfo.setVisible(true);
-            typeInfo.setVisible(true);
-            //virtualCheckBox.setVisible(true);
-            if (selectedZarrFileInfo.isZipZarr()) {
-                nameInfo.setText(String.format("Zarr zip container"));
+    public void updateInfo(File file) {
+        resetPreview();
+        if (file != null) {
+            selectedFile = file;
+            selectedZarrFileInfo = new ZarFileInfo(file);
+            if (selectedZarrFileInfo.isValidZarr()) {
+                showZarrPreview();
+                setVisible(true);
+            } else if (file.isDirectory()) {
+                for (Component component : getComponents()) {
+                    component.setVisible(component == directoryMessage);
+                }
+                setVisible(true);
             } else {
-                nameInfo.setText(String.format("Zarr folder"));
-            }
-            if (selectedZarrFileInfo.isTopLevelArray()) {
-                typeInfo.setText(String.format("TL array"));
-            } else {
-                typeInfo.setText(String.format("Group"));
-                //Populate Jtree with group content
-                //DefaultMutableTreeNode root = new DefaultMutableTreeNode("/");
-                DefaultMutableTreeNode jTreeRoot = selectedZarrFileInfo.getJTreeRootNode();
-                DefaultTreeModel model = new DefaultTreeModel(jTreeRoot);
-                arrayTree.setModel(model);
-                arrayTree.setRootVisible(false);
-                arrayTree.setShowsRootHandles(true);
-                arrayTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
-                installTreeSelectionListener(arrayTree);
-                treeScrollPane.setVisible(true);
-            }
-            //virtualCheckBox.setSelected(true);
-        } else {
-            DenFileInfo denInf = new DenFileInfo(f);
-            if (denInf.isValidDEN()) {
-                if (denInf.isExtendedDEN()) {
-                    nameInfo.setText("Extended DEN.");
-                } else {
-                    nameInfo.setText("Legacy DEN.");
+                DenFileInfo info = new DenFileInfo(file);
+                if (info.isValidDEN()) {
+                    showDenPreview(info);
+                    setVisible(true);
                 }
-                int DIMCOUNT = denInf.getDIMCOUNT();
-                typeInfo.setText(String.format("%dD %s", DIMCOUNT, denInf.getElementType().name()));
-                String dimString;
-                if (DIMCOUNT == 0) {
-                    dimString = "Empty dim";
-                } else {
-                    dimString = String.format("%d", denInf.getDim(0));
-                    for (int i = 1; i < DIMCOUNT; i++) {
-                        dimString = String.format("%sx%d", dimString, denInf.getDim(i));
-                    }
-                }
-                if (DIMCOUNT > 2) {
-                    virtualCheckBox.setVisible(true);
-                }
-                if (denInf.getElementCount() < 32768) {
-                    virtualCheckBox.setSelected(false);
-                } else {
-                    virtualCheckBox.setSelected(true);
-                }
-                dimInfo.setText(dimString);
-                treeScrollPane.setVisible(false);
-            } else {
-                nameInfo.setText("NO DEN/ZAR");
-                typeInfo.setText("TYPEINFO");
-                dimInfo.setText("DIMINFO");
-                debugInfo.setText("Not a valid Zarr or DEN file.");
-                noInfo.setText("No preview available.");
-                noInfo.setVisible(true);
-                virtualCheckBox.setVisible(false);
-                treeScrollPane.setVisible(false);
             }
         }
-    }
-
-    protected void paintComponent(Graphics g) {
-        int componentWidth = getWidth();
-        int componentHeight = getHeight();
-        //String debugStr = String.format("w=%d, h=%d", componentWidth, componentHeight);
-        // g.drawString(debugStr, 5, 10);
-        //debugInfo.setText(debugStr);
+        revalidate();
+        repaint();
     }
 }

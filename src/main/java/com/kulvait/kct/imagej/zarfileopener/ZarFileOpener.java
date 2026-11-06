@@ -108,6 +108,9 @@ public class ZarFileOpener implements PlugIn {
     }
 
     private boolean isDENFileOrZarrStore(File file) {
+        if (file == null || !file.exists()) {
+            return false;
+        }
         DenFileInfo inf = new DenFileInfo(file);
         if (inf.isValidDEN()) {
             return true;
@@ -141,7 +144,7 @@ public class ZarFileOpener implements PlugIn {
                                 super.approveSelection();
                                 return;
                             }
-                            if (selectedFile.isDirectory()) {
+                            if (selectedFile != null && selectedFile.isDirectory()) {
                                 setCurrentDirectory(selectedFile);
                                 return;
                             }
